@@ -7,6 +7,10 @@ int main(int argc, const char *argv[]) {
 	if (argc > 3) {
 		// mkdir("results", 0777);
 	    auto *graph = new Graph(argv[1], argv[2], argv[3]);
+	    
+	    graph->SAE();
+	    // graph->MVE();
+
 	    stringstream lambda(argv[4]);
 	    stringstream maxIter(argv[5]);
 	    stringstream B(argv[6]);

@@ -25,15 +25,35 @@
 using namespace std;
 using namespace boost;
 
+struct SPPRC_Graph_Vert_Prep {
+    SPPRC_Graph_Vert_Prep(int n = 0, int c = 0) : num(n), con(c) {}
+
+    int num;
+    // Resource consumed
+    int con;
+};
+
+struct SPPRC_Graph_Arc_Prep {
+    SPPRC_Graph_Arc_Prep(int n = 0, int c = 0, int r = 0) : num(n), cost(c), res(r) {}
+
+    int num;
+    // traversal cost
+    int cost;
+    // traversal resource
+    int res;
+};
+
+typedef adjacency_list<vecS, vecS, directedS, SPPRC_Graph_Vert_Prep, SPPRC_Graph_Arc_Prep> SPPRCGraphPrep;
 typedef adjacency_list<vecS, vecS, directedS, no_property, property<edge_weight_t, int>> BoostGraph;
+
 typedef graph_traits<BoostGraph>::edge_descriptor EdgeDescriptor;
 typedef graph_traits<BoostGraph>::vertex_descriptor VertexDescriptor;
 
+typedef graph_traits<SPPRCGraphPrep>::vertex_descriptor vertex_descriptor;
+typedef graph_traits<SPPRCGraphPrep>::edge_descriptor edge_descriptor;
+
 class Graph {
     int n, m, root, cntRemoved, paramDelay, paramJitter, paramVariation, paramBandwidth, bigMDelay = 0, bigMJitter = 0;
-
-    typedef graph_traits<BoostGraph>::vertex_descriptor vertex_descriptor;
-    typedef graph_traits<BoostGraph>::edge_descriptor edge_descriptor;
 
     vector<vertex_descriptor> predecessors;
     vector<int> distance;
@@ -48,6 +68,8 @@ public:
     Graph(string instance, string param, string outputName);
 
     void SAE();
+
+    void MVE();
 
     void graphReduction();
 

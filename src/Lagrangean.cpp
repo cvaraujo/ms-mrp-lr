@@ -33,6 +33,9 @@ void Lagrangean::getGradientTerminals(vector<vector<double>> &gradientVar) {
             }
         }
     }
+    if (!feasible) {
+        cout << "*** variation ***" << endl;
+    }
 }
 
 void Lagrangean::getGradientRelation(vector<vector<vector<double>>> &gradientRel) {
@@ -45,6 +48,9 @@ void Lagrangean::getGradientRelation(vector<vector<vector<double>>> &gradientRel
                 if (gradientRel[i][j][k] > 0) feasible = false;
             }
         }
+    }
+    if (!feasible) {
+        cout << "*** relation ***" << endl;
     }
 }
 
@@ -91,10 +97,11 @@ void Lagrangean::updatePathCostsNT() {
         for (auto arc : graph->arcs[i]) {
             j = arc->getD();
             sumMultipliers = 0;
-            for (auto q : graph->nonTerminals)
-                sumMultipliers += multipliersRel[i][j][q];
+            // for (auto q : graph->nonTerminals)
+                // sumMultipliers += multipliersRel[i][j][q];
             
-            model->updateEdgePath(i, j, sumMultipliers, false);
+            for (auto k : graph->terminals)
+                model->updateEdgePath(i, j, k, sumMultipliers, false);
         }               
     }
 }
@@ -106,11 +113,11 @@ void Lagrangean::updatePathCosts(int k) {
     for (i = 0; i < n; i++) {
         for (auto *arc : graph->arcs[i]) {
             j = arc->getD(), edgeCostAux = 0;
-            for (auto l : graph->terminals) {
+            for (auto l : graph->terminals)
                 if (l != k) edgeCostAux += (multipliersVar[k][l] - multipliersVar[l][k]);
-            }
+                
             edgeCost = multipliersRel[i][j][k] + (arc->getDelay() * edgeCostAux);
-            model->updateEdgePath(i, j, edgeCost, true);                
+            model->updateEdgePath(i, j, k, edgeCost, true);                
         }
     }
 
@@ -131,7 +138,7 @@ void Lagrangean::updatePPL() {
                     coefZ += multipliersVar[l][k] * bigML;
                 }
             }
-            if (1 - coefZ < 0) {
+            if (1 - coefZ < 0 || model->noPath[k]) {
                 model->z[k] = true;
             }
         }
@@ -139,7 +146,6 @@ void Lagrangean::updatePPL() {
 
     for (int k: graph->terminals) {
         if (model->z[k]) {
-            // cout << k << ", ";
             penalty += 1;
         }
         for (int l : graph->terminals) 
@@ -161,15 +167,13 @@ void Lagrangean::updatePPL() {
 bool Lagrangean::solveModel() {
     model->objectiveValue = 0;
     model->initialize();
+    updatePathCostsNT();
+    
     for (auto k : graph->terminals) {
-        updatePathCostsNT();
-        // cout << "NT" << endl;
-        updatePathCosts(k);
-        // cout << "T" << endl;
-        // getchar();
-        model->constrainedShortestpath(k);
-        // cout << "PATH" << endl;
-
+        if (!model->noPath[k]) {
+            updatePathCosts(k);
+            model->constrainedShortestpath(k);
+        }
     }
 
     // cout << "CSHP: " << model->objectiveValue << endl;
@@ -193,7 +197,7 @@ double Lagrangean::originalObjectiveValue() {
         for (auto arc : graph->arcs[i]) {
             j = arc->getD();
             if(model->y[i][j]) {
-                cout << i << " - " << j << endl;
+                cout << i+1 << " - " << j+1 << endl;
             }
         }
     }
@@ -203,7 +207,7 @@ double Lagrangean::originalObjectiveValue() {
             for (auto arc : graph->arcs[i]) {
                 j = arc->getD();
                 if(model->f[i][j][k]) {
-                    cout << i << " - " << j << " - " << k << endl;
+                    cout << i+1 << " - " << j+1 << " - " << k+1 << endl;
                 }
             }
         }
@@ -220,7 +224,7 @@ double Lagrangean::originalObjectiveValue() {
 }
 
 bool Lagrangean::isFeasible() {
-    if (feasible) return true;
+    if (feasible) return model->isAcyclic();
     feasible = true;
     return false;
 }
@@ -241,6 +245,12 @@ double Lagrangean::solve() {
 
     multipliersVar = vector<vector<double >>(n, vector<double>(n));
     multipliersRel = vector<vector<vector<double >>>(graph->getN(), vector<vector<double>>(graph->getN(), vector<double>(graph->getN())));
+
+    // for (int i = 0; i < n; i++) {
+        // cout << i << model->noPath[i] << endl;
+    // }
+
+    // getchar();
 
     while (iter < maxIter && endTime < time) {
         if (solveModel()) {
@@ -280,10 +290,10 @@ double Lagrangean::solve() {
             normRel = getNormRelation(gradientRel);
 
             if (normVar == 0) thetaVar = 0;
-            else thetaVar = lambda * ((UB - objectiveFunctionPPL) / pow(normVar, 2));
+            else thetaVar = (lambda * (UB - objectiveFunctionPPL)) / pow(normVar, 2);
 
             if (normRel == 0) thetaRel = 0;
-            else thetaRel = lambda * ((UB - objectiveFunctionPPL) / pow(normRel, 2));
+            else thetaRel = (lambda * (UB - objectiveFunctionPPL)) / pow(normRel, 2);
 
             for (int k : graph->terminals) 
                 for (int l : graph->terminals)
@@ -301,7 +311,7 @@ double Lagrangean::solve() {
             iter++;
             end = chrono::steady_clock::now();
             endTime = chrono::duration_cast<chrono::seconds>(end - start).count();
-            // getchar();
+            getchar();
 
         }
     }
