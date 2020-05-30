@@ -52,25 +52,23 @@ public:
     // SPPRCGraph CshpGraph;
     vector<SPPRCGraph> cshpGraph;
     BoostGraph graphEdmonds;
+    BoostGraph heuristicGraph;
     Graph *graph;
 
     property_map<BoostGraph, edge_weight_t>::type weightMap;
     property_map<BoostGraph, vertex_index_t>::type indexMap;
-    vector<bool> z;
-    vector<bool> noPath;
-    vector<vector<bool>> y;
+    vector<bool> z, noPath, used;
+    vector<vector<bool>> y, treeY;
     vector<Arc_edmonds> arcsReturn;
-    vector<vector<bool>> treeY;
     vector<vector<vector<bool>>> f;
-    // vector<double> distance;
-    // vector<size_t> parent;
+    vector<Arc*> branchingEdges;
     double objectiveValue = 0;
 
     void edmonds();
     
     void constrainedShortestpath(int k);
 
-    void updateEdgePath(int i, int j, int k, double weight, bool increase);
+    void updateEdgePath(int i, int j, int k, double weight);
 
     void updateEdgeBranching(int i,  int j, double weight);
 
@@ -81,6 +79,8 @@ public:
     void initialize();
 
     bool solve();
+
+    int heuristic();
 
     bool isAcyclic();
 

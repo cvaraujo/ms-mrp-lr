@@ -3,7 +3,7 @@ project(MaxServiceLagrangean)
 
 set(CMAKE_CXX_STANDARD 11)
 
-include_directories(inc src)
+include_directories(inc src /opt/boost_1_73_0/)
 
 add_executable(MaxServiceLagrangean
         inc/Arc.h

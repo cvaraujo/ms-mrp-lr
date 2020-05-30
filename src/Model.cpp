@@ -65,7 +65,10 @@ Model::Model(Graph *graph) {
     cshpGraph = vector<SPPRCGraph>(n);
     vector<BoostGraph> aux = vector<BoostGraph>(n);
     graphEdmonds = BoostGraph();
+    heuristicGraph = BoostGraph();
     noPath = vector<bool>(n);
+    used = vector<bool>(n);
+    branchingEdges = vector<Arc*>();
 
     for (int i = 0; i < n; i++)
         for (int j = 0; j < n; j++)
@@ -91,28 +94,31 @@ Model::Model(Graph *graph) {
             noPath[k] = true;
             cout << k+1 << endl;
         }
-        
     }
 
     for (auto k : graph->terminals)
-        for(int i = 0; i < n; i++)
-            add_vertex(SPPRC_Graph_Vert(i, graph->getParamDelay(), graph->getParamJitter()), cshpGraph[k]);
+        if (!noPath[k]) 
+            for(int i = 0; i < n; i++)
+                add_vertex(SPPRC_Graph_Vert(i, graph->getParamDelay(), graph->getParamJitter()), cshpGraph[k]);
     
     for(int i = 0; i < n; i++) 
-        if (!graph->removed[i])
+        if (!graph->removed[i]) {
             add_vertex(i, graphEdmonds);
+            add_vertex(i, heuristicGraph);
+        }
 
     int countEdges = 0;
     for (int i = 0; i < n; i++)
-        for (auto arc : graph->arcs[i]) { 
-            add_edge(i, arc->getD(), 0, graphEdmonds);
-            for (auto k : graph->terminals)
-                if (!graph->removedF[i][arc->getD()][k])
-                    add_edge(i, arc->getD(), SPPRC_Graph_Arc(countEdges++, 0.0, 
-                        arc->getDelay(), arc->getJitter()), cshpGraph[k]);
+        if(!graph->removed[i]) {
+            for (auto arc : graph->arcs[i]) { 
+                add_edge(i, arc->getD(), 0, graphEdmonds);
+                add_edge(i, arc->getD(), arc->getDelay(), heuristicGraph);
+                for (auto k : graph->terminals)
+                    if (!graph->removedF[i][arc->getD()][k])
+                        add_edge(i, arc->getD(), SPPRC_Graph_Arc(countEdges++, 0.0, arc->getDelay(), arc->getJitter()), cshpGraph[k]);
+            }
         }
-
-    // cout << "Grafos criados" << endl;
+    cout << "Grafos criados" << endl;
     // getchar();
 }
 
@@ -122,6 +128,7 @@ void Model::initialize() {
     treeY = vector<vector<bool>>(n, vector<bool>(n));
     z = vector<bool>(n);
     f = vector<vector<vector<bool>>>(n, vector<vector<bool>>(n, vector<bool>(n)));
+    used = vector<bool>(n);
 }
 
 bool Model::compareArcs(Arc_edmonds a, Arc_edmonds b) {
@@ -139,56 +146,38 @@ void Model::edmonds() {
     Vertex roots[2];
     roots[0] = root;
 	roots[1] = root;
-
-
-    // cout << root << endl;
-    // getchar();
-    // cout << "========================" << endl;
-
     BOOST_FOREACH(Edge e, edges(graphEdmonds)) {
-		// cout << e.m_source << " - " << e.m_target << " = " << get(weightMap, e) << endl;
         arcsReturn.push_back(Arc_edmonds{int(e.m_source), int(e.m_target), get(weightMap, e)});
     }
 
     sort(arcsReturn.begin(), arcsReturn.end(), compareArcs);
-
-    // for (auto ac : arcsReturn) {
-    //     cout << ac.o << " - " << ac.d << " = " << ac.c << endl;
-    // }
+    branchingEdges.erase(branchingEdges.begin(), branchingEdges.end());
 
     for (int i = 0; i < graph->getNAfterRemoved()-1; i++) {
-        // cout << arcsReturn[i].o << " - " << arcsReturn[i].d << " = " << arcsReturn[i].c << endl;
         objectiveValue += arcsReturn[i].c;
         y[arcsReturn[i].o][arcsReturn[i].d] = true;   
     }
-
-    // getchar();
 
     edmonds_optimum_branching<false, true, true>(graphEdmonds,
                                                  indexMap,
                                                  weightMap,
                                                  roots,
-                                                 roots + 1,
+                                                 roots+1,
                                                  back_inserter(branching));
 
     for (auto e : branching) {
         i = e.m_source, j = e.m_target;
-        // edgeWeight = get(weightMap, e);
-        // cout << i << " - " << j << ": " << edgeWeight << endl;
-        // objectiveValue += edgeWeight;
+        branchingEdges.push_back(new Arc(i, j, graph->getDelay(i, j), graph->getJitter(i, j), 0, 0));
         treeY[i][j] = true;
     }
-
-    // cout << "========================" << endl;
-    
-    // cout << "Branching: " << objectiveValue << endl;
-    // getchar();
-
 }
 
 void Model::constrainedShortestpath(int k) {
     vector<vector<graph_traits<SPPRCGraph>::edge_descriptor>> opt_solutions;
     vector<spp_spp_res_cont> pareto_opt;
+    int indexMin = 0, i, j, l;
+    double minSP, minPath;
+    vector<pair<int, int>> firstPath = vector<pair<int, int>>();
 
     SPPRC_Graph_Vert &vert_prop = get(vertex_bundle, cshpGraph[k])[k];
     vert_prop.con_1 = graph->getParamDelay();
@@ -207,11 +196,28 @@ void Model::constrainedShortestpath(int k) {
                      allocator<r_c_shortest_paths_label<SPPRCGraph, spp_spp_res_cont >>(),
                      default_r_c_shortest_paths_visitor());
 
-    if (pareto_opt.empty()) {        
-        vert_prop.con_1 = graph->getBigMDelay();
-        vert_prop.con_2 = graph->getBigMJitter();
+    /*if (!pareto_opt.empty()) {
+        minSP = pareto_opt[0].cost;
+        indexMin = 0;
+        for (i = 1; i < opt_solutions.size(); i++) {
+            if (pareto_opt[i].cost < minSP) {
+                minSP = pareto_opt[i].cost;
+                indexMin = i;
+            }
+        }
 
+        minPath = minSP;
+        for (j = static_cast<int>(opt_solutions[indexMin].size())-1; j >= 0; --j) {
+            i = source(opt_solutions[indexMin][j], cshpGraph[k]);
+            l = target(opt_solutions[indexMin][j], cshpGraph[k]);
+            firstPath.push_back(make_pair(i, l));
+        }
+    } else {*/
+    if (pareto_opt.empty()) {
         z[k] = true;
+
+        vert_prop.con_1 = graph->getBigMDelay();
+        vert_prop.con_2 = graph->getBigMJitter();    
 
         r_c_shortest_paths(cshpGraph[k],
                          get(&SPPRC_Graph_Vert::num, cshpGraph[k]),
@@ -225,60 +231,53 @@ void Model::constrainedShortestpath(int k) {
                          dominance_spptw(),
                          allocator<r_c_shortest_paths_label<SPPRCGraph, spp_spp_res_cont >>(),
                          default_r_c_shortest_paths_visitor()); 
-
+     
         vert_prop.con_1 = graph->getParamDelay();
         vert_prop.con_2 = graph->getParamJitter();
-
     }
 
     if (!pareto_opt.empty()) {
-        double minSP = pareto_opt[0].cost;
-        int indexMin = 0;
+        minSP = pareto_opt[0].cost;
+        indexMin = 0;
 
-        for (int i = 1; i < opt_solutions.size(); i++) {
+        for (i = 1; i < opt_solutions.size(); i++) {
             if (pareto_opt[i].cost < minSP) {
                 minSP = pareto_opt[i].cost;
                 indexMin = i;
             }
         }
 
-        for (int j = static_cast<int>(opt_solutions[indexMin].size())-1; j >= 0; --j) {
-            f[source(opt_solutions[indexMin][j], cshpGraph[k])][target(opt_solutions[indexMin][j], cshpGraph[k])][k] = true;
-            // cout << source(opt_solutions[indexMin][j], cshpGraph[k]) << ", " << target(opt_solutions[indexMin][j], cshpGraph[k]) << ", " << k << endl;
+        // if (z[k] || minSP < minPath) {
+        for (j = static_cast<int>(opt_solutions[indexMin].size())-1; j >= 0; --j) {
+            i = source(opt_solutions[indexMin][j], cshpGraph[k]);
+            l = target(opt_solutions[indexMin][j], cshpGraph[k]);
+            f[i][l][k] = true;
         }
-        
-        objectiveValue += pareto_opt[indexMin].cost;
+        objectiveValue += minSP;
+        // } else {
+        //     for (auto p : firstPath)
+        //         f[p.first][p.second][k] = true;
+        //     objectiveValue += minPath;
+        // }
     }
-    // cout << "CSHP: " << k << endl;
 }
 
 void Model::updateEdgeBranching(int i, int j, double weight) {
     Edge e;
     bool found;
-    // cout << i << " - " << j << " = " << weight << endl;
     tie(e, found) = edge(i, j, graphEdmonds);
     if (found) boost::put(edge_weight_t(), graphEdmonds, e, weight);
-    // tie(e, found) = edge(i, j, graphEdmonds);
-    // cout << i << " - " << j << " = " << boost::get(edge_weight_t(), graphEdmonds, e) << endl;
 }
 
-void Model::updateEdgePath(int i, int j, int k, double weight, bool increase) {
-    if (!graph->removedF[i][j][k]) {
-        edge_descriptor ed;
-        bool found;
-        tie(ed, found) = edge(i, j, cshpGraph[k]);
-        if (found) {
-        	if (increase) {
-        		SPPRC_Graph_Arc &arc_prop = get(edge_bundle, cshpGraph[k])[ed];
-        		// cout << arc_prop.cost << ", " << arc_prop.res_1 << ", " << arc_prop.res_2 << endl;
-        		// getchar(); 
-    		    arc_prop.cost += weight;
-        	} else {
-    		    SPPRC_Graph_Arc &arc_prop = get(edge_bundle, cshpGraph[k])[ed];
-    		    arc_prop.cost = weight;
-    		}
-    	}
-    }
+void Model::updateEdgePath(int i, int j, int k, double weight) {
+    edge_descriptor ed;
+    bool found;
+    tie(ed, found) = edge(i, j, cshpGraph[k]);
+
+    if (found) {
+        SPPRC_Graph_Arc &arc_prop = get(edge_bundle, cshpGraph[k])[ed];
+	    arc_prop.cost = weight;
+	}
 }
 
 void Model::insertPenalties(double penalty) {
@@ -320,4 +319,52 @@ bool Model::isAcyclic() {
     }
     return true;
 
+}
+
+int Model::heuristic() {
+    int n = graph->getN();
+    property_map<BoostGraph, edge_weight_t>::type weightMapDelay = get(edge_weight, heuristicGraph);
+    vector<Vertex> predecessors = vector<Vertex>(n);
+    vector<int> distance = vector<int>(n);
+    vector<bool> notAttended = vector<bool>(n);
+    vector<int> jitterDistance = vector<int>(n);
+
+    dijkstra_shortest_paths(heuristicGraph, graph->getRoot(), predecessor_map(
+            make_iterator_property_map(predecessors.begin(), get(vertex_index, heuristicGraph))).distance_map(
+            make_iterator_property_map(distance.begin(), get(vertex_index, heuristicGraph))));
+
+    for (auto k : graph->terminals) 
+        if (distance[k] > graph->getParamDelay()) 
+            notAttended[k] = true;
+
+    int actual, jitter, count = 0;
+    for (auto t : graph->terminals) {
+        actual = t, jitter = 0;
+        while (actual != graph->getRoot()) {
+            jitter += graph->getJitter(predecessors[actual], actual);
+            actual = predecessors[actual];
+            // cout << actual << " - " << graph->getRoot() << endl;
+            // getchar();
+        }
+        if (jitter > graph->getParamJitter())
+            notAttended[t] = true;
+        jitterDistance[t] = jitter;
+    }
+
+    for (auto k : graph->terminals) {
+        for (auto l : graph->terminals) {
+            if (l != k && !notAttended[k] && !notAttended[l]) {
+                if (distance[k] - distance[l] > graph->getParamVariation()) {
+                    notAttended[distance[k] > distance[l] ? k : l] = true;
+                    // notAttended[l] = true;
+                }
+            }
+        }
+    }
+
+    for (auto t : graph->terminals) 
+        if (notAttended[t])
+            count++;  
+    cout << "Heuristic: " << count << endl;  
+    return count;
 }

@@ -110,6 +110,11 @@ public:
     int getShpTerminal(int k);
 
     int getNAfterRemoved();
+
+    int getDelay(int i, int j);
+
+    int getJitter(int i, int j);
+
 };
 
 

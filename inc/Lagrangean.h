@@ -39,7 +39,7 @@ public:
 
     void updatePPL();
 
-    void updatePathCostsNT();
+    void updatePathCostsNT(int q);
 
     double originalObjectiveValue();
 

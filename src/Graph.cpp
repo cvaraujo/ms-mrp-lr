@@ -489,7 +489,7 @@ void Graph::SAE() {
         }
     }
 
-    cout << "Preprocessing finished!" << cntRem << endl;
+    cout << "Preprocessing finished! " << cntRem << endl;
 }
 
 void Graph::showGraph() {
@@ -592,3 +592,20 @@ void Graph::setRoot(int root) {
     Graph::root = root;
 }
 
+int Graph::getDelay(int i, int j) {
+    for (auto arc : arcs[i]) {
+        if (arc->getD() == j) {
+            return arc->getDelay();
+        }
+    }
+    return paramDelay;
+}
+
+int Graph::getJitter(int i, int j) {
+    for (auto arc : arcs[i]) {
+        if (arc->getD() == j) {
+            return arc->getJitter();
+        }
+    }
+    return paramJitter;
+}
