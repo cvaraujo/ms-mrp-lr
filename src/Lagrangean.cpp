@@ -27,7 +27,12 @@ void Lagrangean::getGradientTerminals(vector<vector<double>> &gradientVar) {
                 for (i = 0; i < n; i++) {
                     for (auto *arc : graph->arcs[i]) {
                         j = arc->getD();
-                        gradientVar[k][l] += arc->getDelay() * (int(model->f[i][j][k]) - int(model->f[i][j][l]));
+                        if (graph->removedF[i][j][k] && !graph->removedF[i][j][l]) {
+                            gradientVar[k][l] -= int(model->f[i][j][l]) * arc->getDelay();
+                        } else if (!graph->removedF[i][j][k] && graph->removedF[i][j][l]) {
+                            gradientVar[k][l] += int(model->f[i][j][k]) * arc->getDelay();
+                        } else if (!graph->removedF[i][j][k] && !graph->removedF[i][j][l])
+                            gradientVar[k][l] += arc->getDelay() * (int(model->f[i][j][k]) - int(model->f[i][j][l]));
                     }
                 }
                 if (gradientVar[k][l] > 0) feasible = false;
@@ -38,8 +43,8 @@ void Lagrangean::getGradientTerminals(vector<vector<double>> &gradientVar) {
 
 void Lagrangean::getGradientRelation(vector<vector<vector<double>>> &gradientRel) {
     int i, j, n = graph->getN();
-    for (auto k : graph->terminals) {
-        if (!graph->removed[k]) {
+    for (auto k : graph->DuS) {
+        if (!graph->removed[k] && !model->noPath[k]) {
             for (i = 0; i < n; i++) {
                 if (!graph->removed[i]) {
                     for (auto *arc : graph->arcs[i]) {
@@ -59,7 +64,7 @@ void Lagrangean::getGradientRelation(vector<vector<vector<double>>> &gradientRel
 double Lagrangean::getNormRelation(vector<vector<vector<double>>> &gradient) {
     double sum = 0;
     int i, j, n = graph->getN();
-    for (auto k : graph->terminals) {
+    for (auto k : graph->DuS) {
         for (i = 0; i < n; i++) {
             for (auto *arc : graph->arcs[i]) {
                 j = arc->getD();
@@ -78,7 +83,17 @@ double Lagrangean::getNormTerminals(vector<vector<double>> &gradient) {
     return sqrt(sum);
 }
 
-void Lagrangean::updateTreeCosts() {
+void Lagrangean::updatePathCostsNT(int q) {
+    int i, n = graph->getN();
+
+    for (i = 0; i < n; i++) {
+        for (auto *arc : graph->arcs[i]) {
+            model->updateEdgePath(i, arc->getD(), q, multipliersRel[i][arc->getD()][q]);
+        }
+    }
+}
+
+void Lagrangean::updateTreeCosts() { 
     int i, j, n = graph->getN();
     double sumMultipliers;
     for (i = 0; i < n; i++) {
@@ -86,7 +101,7 @@ void Lagrangean::updateTreeCosts() {
             for (auto *arc : graph->arcs[i]) {
                 j = arc->getD();
                 sumMultipliers = 0;
-                for (auto k : graph->terminals) 
+                for (auto k : graph->DuS) 
                     sumMultipliers -= multipliersRel[i][j][k];
                 model->updateEdgeBranching(i, j, sumMultipliers);
             }
@@ -101,16 +116,13 @@ void Lagrangean::updatePathCosts(int k) {
     for (i = 0; i < n; i++) {
         for (auto *arc : graph->arcs[i]) {
             j = arc->getD(), edgeCostAux = 0;
-            if (!graph->removedF[i][j][k]) {
-                for (auto l : graph->terminals)
-                    if (!graph->removedF[i][j][l] && l != k) 
-                        edgeCostAux += (multipliersVar[k][l] - multipliersVar[l][k]);
-                
-                edgeCost = multipliersRel[i][j][k] + (arc->getDelay() * edgeCostAux);
-                model->updateEdgePath(i, j, k, edgeCost); 
-            }               
+            for (auto l : graph->terminals)
+                if (l != k) edgeCostAux += (multipliersVar[k][l] - multipliersVar[l][k]);
+
+            edgeCost = multipliersRel[i][j][k] + (arc->getDelay() * edgeCostAux);
+            model->updateEdgePath(i, j, k, edgeCost); 
         }
-    }
+    }               
 }
 
 void Lagrangean::updatePPL() {
@@ -155,9 +167,18 @@ bool Lagrangean::solveModel() {
     
     for (auto k : graph->terminals) {
         if (!model->noPath[k]) {
+            // cout << k << ", " << model->objectiveValue << endl;
             updatePathCosts(k);
             model->constrainedShortestpath(k);
         } else model->z[k] = true;
+    }
+    // cout << "CSHP: " << model->objectiveValue << endl;
+
+    for (auto q : graph->nonTerminals) {
+        if (!graph->removed[q]) {
+            updatePathCostsNT(q);
+            model->constrainedShortestpath(q);
+        }
     }
 
     // cout << "CSHP: " << model->objectiveValue << endl;
@@ -208,7 +229,7 @@ double Lagrangean::originalObjectiveValue() {
 }
 
 bool Lagrangean::isFeasible() {
-    if (feasible) return true;//model->isAcyclic();
+    if (feasible) model->isAcyclic();
     feasible = true;
     return false;
 }
@@ -245,10 +266,10 @@ double Lagrangean::solve() {
             // cout << "PPL: " << objectiveFunctionPPL << endl;
 
             if (objectiveFunctionPPL > LB) {
-                LB = ceil(objectiveFunctionPPL), progress = 0;
-                // LB = objectiveFunctionPPL, progress = 0;
+                // LB = ceil(objectiveFunctionPPL), progress = 0;
+                LB = objectiveFunctionPPL, progress = 0;
                 iterBlb = iter;
-                if ((UB - LB) / UB <= 0.0001) return UB;
+                // if ((UB - LB) / UB <= 0.0001) return UB;
             } else { 
                 progress++;
                 if (progress >= B) {
@@ -285,11 +306,10 @@ double Lagrangean::solve() {
                     if (k != l) 
                         multipliersVar[k][l] = max(0.0, multipliersVar[k][l] + gradientVar[k][l] * thetaVar);
 
-            for (auto k : graph->terminals)
+            for (auto k : graph->DuS)
                 for (int i = 0; i < n; i++)
                     for (auto *arc : graph->arcs[i]) 
-                        if (!graph->removedF[i][arc->getD()][k])
-                            multipliersRel[i][arc->getD()][k] = max(0.0, multipliersRel[i][arc->getD()][k] + gradientRel[i][arc->getD()][k] * thetaRel);
+                        multipliersRel[i][arc->getD()][k] = max(0.0, multipliersRel[i][arc->getD()][k] + gradientRel[i][arc->getD()][k] * thetaRel);
             
             // cout << "(Feasible) Upper Bound = " << UB << ", (Relaxed) Lower Bound = " << LB << endl;
 
@@ -478,7 +498,7 @@ void Lagrangean::showSolution(string outputName) {
 
     output << lambda << " " << maxIter << " " << B << " " << time << endl;
 
-    output << UB << " " << LB << " " << 100 * ((UB - LB) / UB) << endl;
+    output << UB << " " << ceil(LB) << " " << 100 * ((UB - LB) / UB) << endl;
 
     output << iterBlb << " " << iterBub << " " << endTime << endl;
 

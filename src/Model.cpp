@@ -96,10 +96,11 @@ Model::Model(Graph *graph) {
         }
     }
 
-    for (auto k : graph->terminals)
-        if (!noPath[k]) 
+    for (auto k : graph->DuS)
+        if (!noPath[k] && !graph->removed[k]) 
             for(int i = 0; i < n; i++)
                 add_vertex(SPPRC_Graph_Vert(i, graph->getParamDelay(), graph->getParamJitter()), cshpGraph[k]);
+                // add_vertex(SPPRC_Graph_Vert(i, graph->getBigMDelay(), graph->getBigMJitter()), cshpGraph[k]);
     
     for(int i = 0; i < n; i++) 
         if (!graph->removed[i]) {
@@ -113,7 +114,7 @@ Model::Model(Graph *graph) {
             for (auto arc : graph->arcs[i]) { 
                 add_edge(i, arc->getD(), 0, graphEdmonds);
                 add_edge(i, arc->getD(), arc->getDelay(), heuristicGraph);
-                for (auto k : graph->terminals)
+                for (auto k : graph->DuS)
                     if (!graph->removedF[i][arc->getD()][k])
                         add_edge(i, arc->getD(), SPPRC_Graph_Arc(countEdges++, 0.0, arc->getDelay(), arc->getJitter()), cshpGraph[k]);
             }
@@ -196,7 +197,7 @@ void Model::constrainedShortestpath(int k) {
                      allocator<r_c_shortest_paths_label<SPPRCGraph, spp_spp_res_cont >>(),
                      default_r_c_shortest_paths_visitor());
 
-    /*if (!pareto_opt.empty()) {
+    if (!pareto_opt.empty()) {
         minSP = pareto_opt[0].cost;
         indexMin = 0;
         for (i = 1; i < opt_solutions.size(); i++) {
@@ -212,54 +213,47 @@ void Model::constrainedShortestpath(int k) {
             l = target(opt_solutions[indexMin][j], cshpGraph[k]);
             firstPath.push_back(make_pair(i, l));
         }
-    } else {*/
-    if (pareto_opt.empty()) {
-        z[k] = true;
+    } else z[k] = true;
 
-        vert_prop.con_1 = graph->getBigMDelay();
-        vert_prop.con_2 = graph->getBigMJitter();    
+    vert_prop.con_1 = graph->getBigMDelay();
+    vert_prop.con_2 = graph->getBigMJitter();    
 
-        r_c_shortest_paths(cshpGraph[k],
-                         get(&SPPRC_Graph_Vert::num, cshpGraph[k]),
-                         get(&SPPRC_Graph_Arc::num, cshpGraph[k]),
-                         graph->getRoot(),
-                         k,
-                         opt_solutions,
-                         pareto_opt,
-                         spp_spp_res_cont(0, 0, 0),
-                         ref_spprc(),
-                         dominance_spptw(),
-                         allocator<r_c_shortest_paths_label<SPPRCGraph, spp_spp_res_cont >>(),
-                         default_r_c_shortest_paths_visitor()); 
-     
-        vert_prop.con_1 = graph->getParamDelay();
-        vert_prop.con_2 = graph->getParamJitter();
+    r_c_shortest_paths(cshpGraph[k],
+                     get(&SPPRC_Graph_Vert::num, cshpGraph[k]),
+                     get(&SPPRC_Graph_Arc::num, cshpGraph[k]),
+                     graph->getRoot(),
+                     k,
+                     opt_solutions,
+                     pareto_opt,
+                     spp_spp_res_cont(0, 0, 0),
+                     ref_spprc(),
+                     dominance_spptw(),
+                     allocator<r_c_shortest_paths_label<SPPRCGraph, spp_spp_res_cont >>(),
+                     default_r_c_shortest_paths_visitor()); 
+
+    minSP = pareto_opt[0].cost;
+    indexMin = 0;
+
+    for (i = 1; i < opt_solutions.size(); i++) {
+        if (pareto_opt[i].cost < minSP) {
+            minSP = pareto_opt[i].cost;
+            indexMin = i;
+        }
     }
 
-    if (!pareto_opt.empty()) {
-        minSP = pareto_opt[0].cost;
-        indexMin = 0;
-
-        for (i = 1; i < opt_solutions.size(); i++) {
-            if (pareto_opt[i].cost < minSP) {
-                minSP = pareto_opt[i].cost;
-                indexMin = i;
-            }
-        }
-
-        // if (z[k] || minSP < minPath) {
+    if (z[k] || minSP < minPath) {
         for (j = static_cast<int>(opt_solutions[indexMin].size())-1; j >= 0; --j) {
             i = source(opt_solutions[indexMin][j], cshpGraph[k]);
             l = target(opt_solutions[indexMin][j], cshpGraph[k]);
             f[i][l][k] = true;
         }
         objectiveValue += minSP;
-        // } else {
-        //     for (auto p : firstPath)
-        //         f[p.first][p.second][k] = true;
-        //     objectiveValue += minPath;
-        // }
+    } else {
+        for (auto p : firstPath)
+            f[p.first][p.second][k] = true;
+        objectiveValue += minPath;
     }
+    
 }
 
 void Model::updateEdgeBranching(int i, int j, double weight) {

@@ -139,7 +139,7 @@ Graph::Graph(string instance, string param, string outputName) {
     bool isTerminal;
     for (int i = 0; i < n; ++i) {
         isTerminal = false;
-        if (i != root) {
+        if (i != root && !removed[i]) {
             for (auto t : terminals) {
                 if (i == t) {
                     isTerminal = true;
