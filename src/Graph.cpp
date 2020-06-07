@@ -157,6 +157,7 @@ Graph::Graph(string instance, string param, string outputName) {
         bigMDelay += delayVector[i], bigMJitter += jitterVector[i];
 
     output.close();
+    noPath = vector<bool>(n);
     cout << "Load graph successfully" << endl;
 }
 
@@ -265,10 +266,8 @@ void Graph::MVE() {
                 arcs[j].erase(arcs[j].begin(), arcs[j].end());
             
             for (int i = 0; i < int(arcs[j].size()); i++) {
-                if (removed[arcs[j][i]->getD()]) {
-                    arcs[j].erase(arcs[j].begin() + i);
-                    i--;
-                }
+                if (removed[arcs[j][i]->getD()]) 
+                    arcs[j].erase(arcs[j].begin() + i--);
             }
         }   
     }
@@ -277,6 +276,17 @@ void Graph::MVE() {
     for (int i = 0; i < n; i++) 
         if (removed[i]) cntRemoved--;
     
+    for (int i = 0; i < nonTerminals.size(); i++) 
+        if (removed[nonTerminals[i]])
+            nonTerminals.erase(nonTerminals.begin() + i--); 
+    
+    for (int i = 0; i < DuS.size(); i++) 
+        if (removed[DuS[i]])
+            DuS.erase(DuS.begin() + i--); 
+
+    bigMDelay = 0, bigMJitter = 0;
+    for (int i = 0; i < cntRemoved - 1; i++)
+        bigMDelay += delayVector[i], bigMJitter += jitterVector[i];
 
     cout << "MVE preprocessing finished!" << endl;
 }
@@ -489,7 +499,47 @@ void Graph::SAE() {
         }
     }
 
-    cout << "Preprocessing finished! " << cntRem << endl;
+    cout << "SAE finished! " << cntRem << endl;
+    finishPreprocessing();
+}
+
+void Graph::finishPreprocessing() {
+    int i, j;
+    vector<BoostGraph> preprocessingGraphs = vector<BoostGraph>(n);
+    
+
+    for (auto i : terminals)
+        preprocessingGraphs[i] = BoostGraph(n);
+
+    for (auto k : terminals)
+        for (int i = 0; i < n; i++)
+            for (auto arc : arcs[i]) 
+                if (!removedF[i][arc->getD()][k])
+                    add_edge(i, arc->getD(), 1, preprocessingGraphs[k]);
+       
+    vector<VertexDescriptor> predecessors;
+    vector<int> distance;
+    
+    for (auto k : terminals) {
+        noPath[k] = false;
+        property_map<BoostGraph, edge_weight_t>::type weightMapDelay = get(edge_weight, preprocessingGraphs[k]);
+        predecessors = vector<VertexDescriptor>(n);
+        distance = vector<int>(n);
+
+        dijkstra_shortest_paths(preprocessingGraphs[k], root, predecessor_map(
+            make_iterator_property_map(predecessors.begin(), get(vertex_index, preprocessingGraphs[k]))).distance_map(
+            make_iterator_property_map(distance.begin(), get(vertex_index, preprocessingGraphs[k]))));
+
+        if (distance[k] >= numeric_limits<int>::max()) {
+            noPath[k] = true;
+            cntRemoved--;
+        }
+    }
+    
+    bigMDelay = 0, bigMJitter = 0;
+    for (int i = 0; i < cntRemoved - 1; i++)
+        bigMDelay += delayVector[i], bigMJitter += jitterVector[i];
+    cout << "Finishing preprocessing" << endl;
 }
 
 void Graph::showGraph() {

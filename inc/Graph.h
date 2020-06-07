@@ -62,7 +62,7 @@ public:
     BoostGraph preProcessing;
     vector<vector<Arc *>> arcs;
     vector<int> terminals, nonTerminals, DuS, delayVector, jitterVector;
-    vector<bool> removed;
+    vector<bool> removed, noPath;
     vector<vector<vector<bool>>> removedF;
 
     Graph(string instance, string param, string outputName);
@@ -70,6 +70,8 @@ public:
     void SAE();
 
     void MVE();
+
+    void finishPreprocessing();
 
     void graphReduction();
 

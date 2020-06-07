@@ -7,6 +7,7 @@
 
 #include "Graph.h"
 #include "boost/graph/strong_components.hpp"
+#include "boost/graph/bellman_ford_shortest_paths.hpp"
 
 using namespace std;
 using namespace boost;
@@ -51,13 +52,14 @@ public:
 
     // SPPRCGraph CshpGraph;
     vector<SPPRCGraph> cshpGraph;
+    vector<BoostGraph> shpGraph;
     BoostGraph graphEdmonds;
     BoostGraph heuristicGraph;
     Graph *graph;
 
     property_map<BoostGraph, edge_weight_t>::type weightMap;
     property_map<BoostGraph, vertex_index_t>::type indexMap;
-    vector<bool> z, noPath, used;
+    vector<bool> z;
     vector<vector<bool>> y, treeY;
     vector<Arc_edmonds> arcsReturn;
     vector<vector<vector<bool>>> f;
@@ -66,9 +68,9 @@ public:
 
     void edmonds();
     
-    void constrainedShortestpath(int k);
+    void constrainedShortestpath(int k, bool isNonTerminal);
 
-    void updateEdgePath(int i, int j, int k, double weight);
+    void updateEdgePath(int i, int j, int k, bool isTerminal, double weight);
 
     void updateEdgeBranching(int i,  int j, double weight);
 

@@ -27,12 +27,7 @@ void Lagrangean::getGradientTerminals(vector<vector<double>> &gradientVar) {
                 for (i = 0; i < n; i++) {
                     for (auto *arc : graph->arcs[i]) {
                         j = arc->getD();
-                        if (graph->removedF[i][j][k] && !graph->removedF[i][j][l]) {
-                            gradientVar[k][l] -= int(model->f[i][j][l]) * arc->getDelay();
-                        } else if (!graph->removedF[i][j][k] && graph->removedF[i][j][l]) {
-                            gradientVar[k][l] += int(model->f[i][j][k]) * arc->getDelay();
-                        } else if (!graph->removedF[i][j][k] && !graph->removedF[i][j][l])
-                            gradientVar[k][l] += arc->getDelay() * (int(model->f[i][j][k]) - int(model->f[i][j][l]));
+                        gradientVar[k][l] += arc->getDelay() * (int(model->f[i][j][k]) - int(model->f[i][j][l]));
                     }
                 }
                 if (gradientVar[k][l] > 0) feasible = false;
@@ -44,17 +39,13 @@ void Lagrangean::getGradientTerminals(vector<vector<double>> &gradientVar) {
 void Lagrangean::getGradientRelation(vector<vector<vector<double>>> &gradientRel) {
     int i, j, n = graph->getN();
     for (auto k : graph->DuS) {
-        if (!graph->removed[k] && !model->noPath[k]) {
-            for (i = 0; i < n; i++) {
-                if (!graph->removed[i]) {
-                    for (auto *arc : graph->arcs[i]) {
-                        j = arc->getD();
-                        gradientRel[i][j][k] = int(model->f[i][j][k]) - int(model->y[i][j]);
-                        
-                        if (gradientRel[i][j][k] > 0) {
-                            feasible = false;
-                        }
-                    }
+        for (i = 0; i < n; i++) {
+            for (auto *arc : graph->arcs[i]) {
+                j = arc->getD();
+                gradientRel[i][j][k] = int(model->f[i][j][k]) - int(model->y[i][j]);
+                
+                if (gradientRel[i][j][k] > 0) {
+                    feasible = false;
                 }
             }
         }
@@ -79,16 +70,16 @@ double Lagrangean::getNormTerminals(vector<vector<double>> &gradient) {
     double sum = 0;
     for (int k : graph->terminals)
         for (int l : graph->terminals)
-            if (k != l) sum += pow(gradient[k][l], 2);
+            if (k != l) 
+                sum += pow(gradient[k][l], 2);
     return sqrt(sum);
 }
 
 void Lagrangean::updatePathCostsNT(int q) {
     int i, n = graph->getN();
-
     for (i = 0; i < n; i++) {
         for (auto *arc : graph->arcs[i]) {
-            model->updateEdgePath(i, arc->getD(), q, multipliersRel[i][arc->getD()][q]);
+            model->updateEdgePath(i, arc->getD(), q, false, multipliersRel[i][arc->getD()][q]);
         }
     }
 }
@@ -97,14 +88,12 @@ void Lagrangean::updateTreeCosts() {
     int i, j, n = graph->getN();
     double sumMultipliers;
     for (i = 0; i < n; i++) {
-        if (!graph->removed[i]) {
-            for (auto *arc : graph->arcs[i]) {
-                j = arc->getD();
-                sumMultipliers = 0;
-                for (auto k : graph->DuS) 
-                    sumMultipliers -= multipliersRel[i][j][k];
-                model->updateEdgeBranching(i, j, sumMultipliers);
-            }
+        for (auto *arc : graph->arcs[i]) {
+            j = arc->getD();
+            sumMultipliers = 0;
+            for (auto k : graph->DuS)
+                sumMultipliers -= multipliersRel[i][j][k];
+            model->updateEdgeBranching(i, j, sumMultipliers);
         }
     }
 }
@@ -117,10 +106,12 @@ void Lagrangean::updatePathCosts(int k) {
         for (auto *arc : graph->arcs[i]) {
             j = arc->getD(), edgeCostAux = 0;
             for (auto l : graph->terminals)
-                if (l != k) edgeCostAux += (multipliersVar[k][l] - multipliersVar[l][k]);
+                if (l != k) 
+                    edgeCostAux += (multipliersVar[k][l] - multipliersVar[l][k]);
 
             edgeCost = multipliersRel[i][j][k] + (arc->getDelay() * edgeCostAux);
-            model->updateEdgePath(i, j, k, edgeCost); 
+            if (!graph->noPath[i] && !graph->noPath[j])
+                model->updateEdgePath(i, j, k, true, edgeCost); 
         }
     }               
 }
@@ -138,7 +129,7 @@ void Lagrangean::updatePPL() {
                 if (k != l) coefZ += multipliersVar[k][l] * bigMK + multipliersVar[l][k] * bigML;
             }
             
-            if (1 - coefZ < 0 || model->noPath[k]) {
+            if (1 - coefZ < 0 || graph->noPath[k]) {
                 model->z[k] = true;
             }
         }
@@ -166,10 +157,10 @@ bool Lagrangean::solveModel() {
     model->initialize();
     
     for (auto k : graph->terminals) {
-        if (!model->noPath[k]) {
-            // cout << k << ", " << model->objectiveValue << endl;
+        if (!graph->noPath[k]) {
             updatePathCosts(k);
-            model->constrainedShortestpath(k);
+            model->constrainedShortestpath(k, false);
+            // cout << k << " - " << model->objectiveValue << endl;
         } else model->z[k] = true;
     }
     // cout << "CSHP: " << model->objectiveValue << endl;
@@ -177,7 +168,7 @@ bool Lagrangean::solveModel() {
     for (auto q : graph->nonTerminals) {
         if (!graph->removed[q]) {
             updatePathCostsNT(q);
-            model->constrainedShortestpath(q);
+            model->constrainedShortestpath(q, true);
         }
     }
 
@@ -191,7 +182,7 @@ bool Lagrangean::solveModel() {
     updatePPL();
 
     // cout << "Penalty: " << model->objectiveValue << endl;
-
+// 
     return true;
 }
 
@@ -251,20 +242,14 @@ double Lagrangean::solve() {
     multipliersVar = vector<vector<double >>(n, vector<double>(n));
     multipliersRel = vector<vector<vector<double >>>(graph->getN(), vector<vector<double>>(graph->getN(), vector<double>(graph->getN())));
 
-    // for (int i = 0; i < n; i++) {
-        // cout << i << model->noPath[i] << endl;
-    // }
-
-    // getchar();
-
     while (iter < maxIter && endTime < time) {
         if (solveModel()) {
             getGradientTerminals(gradientVar);
             getGradientRelation(gradientRel);
+            // cout << iter << ", " << lambda << endl;
 
             objectiveFunctionPPL = model->objectiveValue;
-            // cout << "PPL: " << objectiveFunctionPPL << endl;
-
+            cout << "PPL: " << objectiveFunctionPPL << endl;
             if (objectiveFunctionPPL > LB) {
                 // LB = ceil(objectiveFunctionPPL), progress = 0;
                 LB = objectiveFunctionPPL, progress = 0;
@@ -280,7 +265,7 @@ double Lagrangean::solve() {
 
             originalObjectiveFunction = originalObjectiveValue();
             heuristicObj = heuristic();
-            // cout << "Original: " << originalObjectiveFunction << ", heuristic: " << heuristicObj << endl;
+            cout << "Original: " << originalObjectiveFunction << ", heuristic: " << heuristicObj << endl;
 
             if (isFeasible() && originalObjectiveFunction < UB) {
                 UB = originalObjectiveFunction;
@@ -303,15 +288,14 @@ double Lagrangean::solve() {
 
             for (int k : graph->terminals) 
                 for (int l : graph->terminals)
-                    if (k != l) 
-                        multipliersVar[k][l] = max(0.0, multipliersVar[k][l] + gradientVar[k][l] * thetaVar);
+                    if (k != l) multipliersVar[k][l] = max(0.0, multipliersVar[k][l] + gradientVar[k][l] * thetaVar);
 
             for (auto k : graph->DuS)
                 for (int i = 0; i < n; i++)
                     for (auto *arc : graph->arcs[i]) 
                         multipliersRel[i][arc->getD()][k] = max(0.0, multipliersRel[i][arc->getD()][k] + gradientRel[i][arc->getD()][k] * thetaRel);
-            
-            // cout << "(Feasible) Upper Bound = " << UB << ", (Relaxed) Lower Bound = " << LB << endl;
+    
+            cout << "(Feasible) Upper Bound = " << UB << ", (Relaxed) Lower Bound = " << LB << endl;
 
             iter++;
             end = chrono::steady_clock::now();
@@ -342,7 +326,7 @@ int Lagrangean::heuristic() {
     // cout << "Computing the paths" << endl;
     int actual, jitter, delay, count = 0;
     for (auto k : graph->DuS) {
-        if (!graph->removed[k]) {
+        if (!graph->removed[k] && !graph->noPath[k]) {
             actual = k, jitter = 0, delay = 0;
             while (actual != graph->getRoot()) {
                 jitter += graph->getJitter(predecessors[actual], actual),
@@ -355,8 +339,9 @@ int Lagrangean::heuristic() {
 
     obj = 0;
     for (auto k : graph->terminals) 
-        if (delayPaths[k] > graph->getParamDelay() || jitterPaths[k] > graph->getParamJitter())
-            notAttended[k] = true, obj++;
+        if (!graph->noPath[k])
+            if (delayPaths[k] > graph->getParamDelay() || jitterPaths[k] > graph->getParamJitter())
+                notAttended[k] = true, obj++;
 
     // cout << "Before LS: " << obj << endl;
 
@@ -366,7 +351,7 @@ int Lagrangean::heuristic() {
     int selected = -1, losts;
 
     for (auto k : graph->terminals) {
-        if (!notAttended[k]) {
+        if (!notAttended[k] && !graph->noPath[k]) {
             selected = k;
             break;
         }
@@ -375,23 +360,25 @@ int Lagrangean::heuristic() {
 
     // get the values of this path
     for (auto k : graph->terminals) {
-        if (k != selected) {
+        if (!graph->noPath[k] && k != selected) {
             bestCand = -1, delay = graph->getParamDelay()+1, jitter = graph->getParamJitter()+1; 
             
             if (delayPaths[k] < (delayPaths[selected] - graph->getParamVariation()) || delayPaths[k] > (delayPaths[selected] + graph->getParamVariation())) {
                 for (auto arc : graph->arcs[k]) {
                     i = arc->getD();
-                    // Get the best candidate to move
-                    if (i != predecessors[k] && k != predecessors[i]) {
-                        if (delayPaths[i] + arc->getDelay() >= (delayPaths[selected] - graph->getParamVariation()) &&
-                            delayPaths[i] + arc->getDelay() <= (delayPaths[selected] + graph->getParamVariation()) &&
-                            delayPaths[i] + arc->getDelay() <= graph->getParamDelay() && 
-                            jitterPaths[i] + arc->getJitter() <= graph->getParamJitter()) {
+                    if (!graph->removed[i] && !graph->noPath[i]) {
+                        // Get the best candidate to move
+                        if (i != predecessors[k] && k != predecessors[i]) {
+                            if (delayPaths[i] + arc->getDelay() >= (delayPaths[selected] - graph->getParamVariation()) &&
+                                delayPaths[i] + arc->getDelay() <= (delayPaths[selected] + graph->getParamVariation()) &&
+                                delayPaths[i] + arc->getDelay() <= graph->getParamDelay() && 
+                                jitterPaths[i] + arc->getJitter() <= graph->getParamJitter()) {
 
-                            bestCand = i;
-                            delay = delayPaths[i] + arc->getDelay();
-                            jitter = jitterPaths[i] + arc->getJitter();
-                            break;
+                                bestCand = i;
+                                delay = delayPaths[i] + arc->getDelay();
+                                jitter = jitterPaths[i] + arc->getJitter();
+                                break;
+                            }
                         }
                     }
                 }
@@ -417,7 +404,7 @@ int Lagrangean::heuristic() {
                         actual = changed.back();
                         changed.pop_back();
                         for (int j : graph->DuS) {
-                            if (!graph->removed[j] && j != actual && predecessorsAux[j] == actual) {
+                            if (!graph->removed[j] && !graph->noPath[j] && j != actual && predecessorsAux[j] == actual) {
                                 delayPathAux[j] += diffDelay, jitterPathAux[j] += diffJitter;
                                 if (delayPathAux[j] > graph->getParamDelay() || jitterPathAux[j] > graph->getParamJitter()) {
                                     notAttendedAux[j] = true;
@@ -447,7 +434,7 @@ int Lagrangean::heuristic() {
     int leqSelec = 0, geqSelec = 0; 
     obj = 0;
     for (auto k : graph->terminals)
-        if (k != selected) {
+        if (!graph->noPath[k] && k != selected) {
             if (notAttended[k] || delayPaths[k] < (delayPaths[selected] - graph->getParamVariation()) ||
                 delayPaths[k] > (delayPaths[selected] + graph->getParamVariation()) ||
                 delayPaths[k] > graph->getParamDelay() || jitterPaths[k] > graph->getParamJitter())
@@ -462,28 +449,30 @@ int Lagrangean::heuristic() {
     // cout << leqSelec << " - " << geqSelec << endl;
     // getchar();
     for (auto k : graph->terminals) {
-        if (k != selected && !notAttended[k]) {
-            for (auto l : graph->terminals) {
-                if (k != l && l != selected && !notAttended[l]) {
-                    if (delayPaths[k] - delayPaths[l] > graph->getParamVariation()) {
-                        if (leqSelec > geqSelec) {
-                            if (delayPaths[k] > delayPaths[selected]) {
-                                notAttended[k] = true;
-                                obj++;
-                                break;
-                            } else notAttended[l] = true;
-                        } else {
-                            if (delayPaths[k] < delayPaths[selected]) {
-                                notAttended[k] = true;
-                                obj++;
-                                break;
-                            } else notAttended[l] = true;
+        if (!graph->noPath[k]) {
+            if (k != selected && !notAttended[k]) {
+                for (auto l : graph->terminals) {
+                    if (k != l && !graph->noPath[l] && l != selected && !notAttended[l]) {
+                        if (delayPaths[k] - delayPaths[l] > graph->getParamVariation()) {
+                            if (leqSelec > geqSelec) {
+                                if (delayPaths[k] > delayPaths[selected]) {
+                                    notAttended[k] = true;
+                                    obj++;
+                                    break;
+                                } else notAttended[l] = true;
+                            } else {
+                                if (delayPaths[k] < delayPaths[selected]) {
+                                    notAttended[k] = true;
+                                    obj++;
+                                    break;
+                                } else notAttended[l] = true;
+                            }
+                            obj++;
                         }
-                        obj++;
                     }
                 }
             }
-        }
+        } else obj++;
     }
 
     // cout << "For Heuristic = " << obj << endl;

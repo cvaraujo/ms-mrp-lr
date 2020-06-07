@@ -54,7 +54,19 @@ public:
 class dominance_spptw {
 public:
     inline bool operator()(const spp_spp_res_cont &res_cont_1, const spp_spp_res_cont &res_cont_2) const {
-        return res_cont_1.cost <= res_cont_2.cost && res_cont_1.res_1 <= res_cont_2.res_1 && res_cont_1.res_2 <= res_cont_2.res_2;
+        return res_cont_1.cost <= res_cont_2.cost && res_cont_1.res_1 <= res_cont_2.res_1;// && res_cont_1.res_2 <= res_cont_2.res_2;
+        // this is not a contradiction to the documentation
+        // the documentation says:
+        // "A label $l_1$ dominates a label $l_2$ if and only if both are
+        // resident at the same vertex, and if, for each resource, the resource
+        // consumption of $l_1$ is less than or equal to the resource
+        // consumption of $l_2$, and if there is at least one resource where
+        // $l_1$ has a lower resource consumption than $l_2$." one can think of
+        // a new label with a resource consumption equal to that of an old label
+        // as being dominated by that old label, because the new one will have a
+        // higher number and is created at a later point in time, so one can
+        // implicitly use the number or the creation time as a resource for
+        // tie-breaking
     }
 };
 // end data structures for shortest path problem with time windows (spptw)
@@ -63,60 +75,48 @@ Model::Model(Graph *graph) {
     this->graph = graph;
     int n = graph->getN();
     cshpGraph = vector<SPPRCGraph>(n);
-    vector<BoostGraph> aux = vector<BoostGraph>(n);
+    shpGraph = vector<BoostGraph>(n);
     graphEdmonds = BoostGraph();
     heuristicGraph = BoostGraph();
-    noPath = vector<bool>(n);
-    used = vector<bool>(n);
     branchingEdges = vector<Arc*>();
 
-    for (int i = 0; i < n; i++)
-        for (int j = 0; j < n; j++)
-            add_vertex(j, aux[i]);
-
-    for (int i = 0; i < n; i++)
-        for (auto arc : graph->arcs[i]) 
-            for (auto k : graph->terminals)
-                if (!graph->removedF[i][arc->getD()][k])
-                    add_edge(i, arc->getD(), 1, aux[k]);
-    
-    for (auto k : graph->terminals) {
-        noPath[k] = false;
-        property_map<BoostGraph, edge_weight_t>::type weightMapDelay = get(edge_weight, aux[k]);
-        vector<Vertex> predecessors = vector<Vertex>(n);
-        vector<int> distance = vector<int>(n);
-
-        dijkstra_shortest_paths(aux[k], graph->getRoot(), predecessor_map(
-            make_iterator_property_map(predecessors.begin(), get(vertex_index, aux[k]))).distance_map(
-            make_iterator_property_map(distance.begin(), get(vertex_index, aux[k]))));
-
-        if (distance[k] >= numeric_limits<int>::max()) {
-            noPath[k] = true;
-            cout << k+1 << endl;
-        }
-    }
-
-    for (auto k : graph->DuS)
-        if (!noPath[k] && !graph->removed[k]) 
+    // Create vertex to the CSHP
+    for (auto k : graph->terminals)
+        if (!graph->noPath[k]) 
             for(int i = 0; i < n; i++)
                 add_vertex(SPPRC_Graph_Vert(i, graph->getParamDelay(), graph->getParamJitter()), cshpGraph[k]);
-                // add_vertex(SPPRC_Graph_Vert(i, graph->getBigMDelay(), graph->getBigMJitter()), cshpGraph[k]);
-    
+                // if (!graph->noPath[i] && !graph->removed[i])
+
+    // Create vertex to the SHP
+    for (auto k : graph->DuS)
+        if (!graph->noPath[k] && !graph->removed[k])
+            for(int i = 0; i < n; i++)
+                add_vertex(i, shpGraph[k]);
+                    
+    // Create vertex to heuristic graphs
     for(int i = 0; i < n; i++) 
-        if (!graph->removed[i]) {
+        if (!graph->removed[i] && !graph->noPath[i]) {
             add_vertex(i, graphEdmonds);
             add_vertex(i, heuristicGraph);
         }
 
     int countEdges = 0;
     for (int i = 0; i < n; i++)
-        if(!graph->removed[i]) {
-            for (auto arc : graph->arcs[i]) { 
-                add_edge(i, arc->getD(), 0, graphEdmonds);
-                add_edge(i, arc->getD(), arc->getDelay(), heuristicGraph);
-                for (auto k : graph->DuS)
-                    if (!graph->removedF[i][arc->getD()][k])
-                        add_edge(i, arc->getD(), SPPRC_Graph_Arc(countEdges++, 0.0, arc->getDelay(), arc->getJitter()), cshpGraph[k]);
+        if(!graph->removed[i] && !graph->noPath[i]) {
+            for (auto arc : graph->arcs[i]) {
+                if (!graph->removed[arc->getD()] && !graph->noPath[arc->getD()]) {
+                    add_edge(i, arc->getD(), 0, graphEdmonds);
+                    add_edge(i, arc->getD(), arc->getDelay(), heuristicGraph);
+                    
+                    for (auto k : graph->terminals)
+                        if (!graph->noPath[k] && !graph->removedF[i][arc->getD()][k]) {
+                            add_edge(i, arc->getD(), SPPRC_Graph_Arc(countEdges++, -1.0, arc->getDelay(), arc->getJitter()), cshpGraph[k]);
+                            add_edge(i, arc->getD(), 0.0, shpGraph[k]);
+                        }
+                    for (auto q : graph->nonTerminals)
+                        if (!graph->removed[q])
+                            add_edge(i, arc->getD(), 0.0, shpGraph[q]);
+                }
             }
         }
     cout << "Grafos criados" << endl;
@@ -129,7 +129,6 @@ void Model::initialize() {
     treeY = vector<vector<bool>>(n, vector<bool>(n));
     z = vector<bool>(n);
     f = vector<vector<vector<bool>>>(n, vector<vector<bool>>(n, vector<bool>(n)));
-    used = vector<bool>(n);
 }
 
 bool Model::compareArcs(Arc_edmonds a, Arc_edmonds b) {
@@ -173,87 +172,140 @@ void Model::edmonds() {
     }
 }
 
-void Model::constrainedShortestpath(int k) {
-    vector<vector<graph_traits<SPPRCGraph>::edge_descriptor>> opt_solutions;
-    vector<spp_spp_res_cont> pareto_opt;
-    int indexMin = 0, i, j, l;
-    double minSP, minPath;
-    vector<pair<int, int>> firstPath = vector<pair<int, int>>();
+void Model::constrainedShortestpath(int k, bool isNonTerminal) { 
+    int indexMin, i, j, l;  
+    if (isNonTerminal) {
+        vector<double> distance(graph->getN(), (numeric_limits<int>::max)());
+        vector<size_t> parent(graph->getN());
+        for (i = 0; i < graph->getN(); ++i)
+            parent[i] = i;
+        distance[graph->getRoot()] = 0;
+        
+        bool r = bellman_ford_shortest_paths(shpGraph[k], graph->getN(),
+                    weight_map(weightMap).distance_map(&distance[0]).predecessor_map(&parent[0]));
+        // Finish this
+        if (!r) {
+            cout << "Do something" << endl;
+            getchar();
+        } else {
+            int actual = k;
+            while(actual != graph->getRoot()) {
+                f[parent[actual]][actual][k] = true;
+                actual = parent[actual];
+            }
+            objectiveValue += distance[k];
+        }
+    } else {
+        vector<vector<graph_traits<SPPRCGraph>::edge_descriptor>> opt_solutions;
+        vector<spp_spp_res_cont> pareto_opt;
+        double minSP, minPath;
+        vector<pair<int, int>> firstPath = vector<pair<int, int>>();
+        
+        SPPRC_Graph_Vert &vert_prop = get(vertex_bundle, cshpGraph[k])[k];
+        vert_prop.con_1 = graph->getParamDelay();
+        vert_prop.con_2 = graph->getParamJitter();
 
-    SPPRC_Graph_Vert &vert_prop = get(vertex_bundle, cshpGraph[k])[k];
-    vert_prop.con_1 = graph->getParamDelay();
-    vert_prop.con_2 = graph->getParamJitter();
+        r_c_shortest_paths(cshpGraph[k],
+                         get(&SPPRC_Graph_Vert::num, cshpGraph[k]),
+                         get(&SPPRC_Graph_Arc::num, cshpGraph[k]),
+                         graph->getRoot(),
+                         k,
+                         opt_solutions,
+                         pareto_opt,
+                         spp_spp_res_cont(0, 0, 0),
+                         ref_spprc(),
+                         dominance_spptw(),
+                         allocator<r_c_shortest_paths_label<SPPRCGraph, spp_spp_res_cont > >(),
+                         default_r_c_shortest_paths_visitor());
 
-    r_c_shortest_paths(cshpGraph[k],
-                     get(&SPPRC_Graph_Vert::num, cshpGraph[k]),
-                     get(&SPPRC_Graph_Arc::num, cshpGraph[k]),
-                     graph->getRoot(),
-                     k,
-                     opt_solutions,
-                     pareto_opt,
-                     spp_spp_res_cont(0, 0, 0),
-                     ref_spprc(),
-                     dominance_spptw(),
-                     allocator<r_c_shortest_paths_label<SPPRCGraph, spp_spp_res_cont >>(),
-                     default_r_c_shortest_paths_visitor());
+        if (!pareto_opt.empty()) {
+            minSP = pareto_opt[0].cost;
+            indexMin = 0;
+            for (i = 1; i < opt_solutions.size(); i++) {
+                if (pareto_opt[i].cost < minSP) {
+                    minSP = pareto_opt[i].cost;
+                    indexMin = i;
+                }
+            }
 
-    if (!pareto_opt.empty()) {
-        minSP = pareto_opt[0].cost;
-        indexMin = 0;
-        for (i = 1; i < opt_solutions.size(); i++) {
-            if (pareto_opt[i].cost < minSP) {
-                minSP = pareto_opt[i].cost;
-                indexMin = i;
+            // cout << pareto_opt[indexMin].cost << " - " << pareto_opt[indexMin].res_1 << " - " << pareto_opt[indexMin].res_2 << endl;
+
+            minPath = minSP;
+            for (j = static_cast<int>(opt_solutions[indexMin].size())-1; j >= 0; --j) {
+                i = source(opt_solutions[indexMin][j], cshpGraph[k]);
+                l = target(opt_solutions[indexMin][j], cshpGraph[k]);
+                firstPath.push_back(make_pair(i, l));
+            }
+        } else z[k] = true;
+
+        vector<double> distance(graph->getN(), (numeric_limits<int>::max)());
+        vector<size_t> parent(graph->getN());
+
+        for (i = 0; i < graph->getN(); ++i)
+            parent[i] = i;
+        distance[graph->getRoot()] = 0;
+        
+        bool r = bellman_ford_shortest_paths(shpGraph[k], graph->getN(),
+                    weight_map(weightMap).distance_map(&distance[0]).predecessor_map(&parent[0]));
+        // cout << "distance[" << k << "] = " << distance[k] << endl;
+        // Finish this
+        if (!r) {
+            // cout << "Negative Cycle" << endl;
+            SPPRC_Graph_Vert &vert_prop = get(vertex_bundle, cshpGraph[k])[k];
+            vert_prop.con_1 = graph->getBigMDelay();
+            vert_prop.con_2 = graph->getBigMJitter();    
+
+            r_c_shortest_paths(cshpGraph[k],
+                             get(&SPPRC_Graph_Vert::num, cshpGraph[k]),
+                             get(&SPPRC_Graph_Arc::num, cshpGraph[k]),
+                             graph->getRoot(),
+                             k,
+                             opt_solutions,
+                             pareto_opt,
+                             spp_spp_res_cont(0, 0, 0),
+                             ref_spprc(),
+                             dominance_spptw(),
+                             allocator<r_c_shortest_paths_label<SPPRCGraph, spp_spp_res_cont >>(),
+                             default_r_c_shortest_paths_visitor()); 
+
+            minSP = pareto_opt[0].cost;
+            indexMin = 0;
+
+            for (i = 1; i < opt_solutions.size(); i++) {
+                if (pareto_opt[i].cost < minSP) {
+                    minSP = pareto_opt[i].cost;
+                    indexMin = i;
+                }
+            }
+            if (z[k] || minSP < minPath) {
+                for (j = static_cast<int>(opt_solutions[indexMin].size())-1; j >= 0; --j) {
+                    i = source(opt_solutions[indexMin][j], cshpGraph[k]);
+                    l = target(opt_solutions[indexMin][j], cshpGraph[k]);
+                    f[i][l][k] = true;
+                }
+                objectiveValue += minSP;
+            } else {
+                for (auto p : firstPath)
+                    f[p.first][p.second][k] = true;
+                objectiveValue += minPath;
+            }
+            // cout << "Do something" << endl;
+            // getchar();
+        } else {
+            if (z[k] || distance[k] < minPath) {
+                int actual = k;
+                while(actual != graph->getRoot()) {
+                    f[parent[actual]][actual][k] = true;
+                    actual = parent[actual];
+                }
+                objectiveValue += distance[k];
+            } else {
+                for (auto p : firstPath)
+                    f[p.first][p.second][k] = true;
+                objectiveValue += minPath;
             }
         }
-
-        minPath = minSP;
-        for (j = static_cast<int>(opt_solutions[indexMin].size())-1; j >= 0; --j) {
-            i = source(opt_solutions[indexMin][j], cshpGraph[k]);
-            l = target(opt_solutions[indexMin][j], cshpGraph[k]);
-            firstPath.push_back(make_pair(i, l));
-        }
-    } else z[k] = true;
-
-    vert_prop.con_1 = graph->getBigMDelay();
-    vert_prop.con_2 = graph->getBigMJitter();    
-
-    r_c_shortest_paths(cshpGraph[k],
-                     get(&SPPRC_Graph_Vert::num, cshpGraph[k]),
-                     get(&SPPRC_Graph_Arc::num, cshpGraph[k]),
-                     graph->getRoot(),
-                     k,
-                     opt_solutions,
-                     pareto_opt,
-                     spp_spp_res_cont(0, 0, 0),
-                     ref_spprc(),
-                     dominance_spptw(),
-                     allocator<r_c_shortest_paths_label<SPPRCGraph, spp_spp_res_cont >>(),
-                     default_r_c_shortest_paths_visitor()); 
-
-    minSP = pareto_opt[0].cost;
-    indexMin = 0;
-
-    for (i = 1; i < opt_solutions.size(); i++) {
-        if (pareto_opt[i].cost < minSP) {
-            minSP = pareto_opt[i].cost;
-            indexMin = i;
-        }
-    }
-
-    if (z[k] || minSP < minPath) {
-        for (j = static_cast<int>(opt_solutions[indexMin].size())-1; j >= 0; --j) {
-            i = source(opt_solutions[indexMin][j], cshpGraph[k]);
-            l = target(opt_solutions[indexMin][j], cshpGraph[k]);
-            f[i][l][k] = true;
-        }
-        objectiveValue += minSP;
-    } else {
-        for (auto p : firstPath)
-            f[p.first][p.second][k] = true;
-        objectiveValue += minPath;
-    }
-    
+    }  
 }
 
 void Model::updateEdgeBranching(int i, int j, double weight) {
@@ -263,15 +315,21 @@ void Model::updateEdgeBranching(int i, int j, double weight) {
     if (found) boost::put(edge_weight_t(), graphEdmonds, e, weight);
 }
 
-void Model::updateEdgePath(int i, int j, int k, double weight) {
+void Model::updateEdgePath(int i, int j, int k, bool isTerminal, double weight) {
     edge_descriptor ed;
     bool found;
-    tie(ed, found) = edge(i, j, cshpGraph[k]);
-
-    if (found) {
-        SPPRC_Graph_Arc &arc_prop = get(edge_bundle, cshpGraph[k])[ed];
-	    arc_prop.cost = weight;
-	}
+    if (isTerminal) {
+        tie(ed, found) = edge(i, j, cshpGraph[k]);
+        if (found) {
+            SPPRC_Graph_Arc &arc_prop = get(edge_bundle, cshpGraph[k])[ed];
+            arc_prop.cost = weight;
+        }
+        tie(ed, found) = edge(i, j, shpGraph[k]);
+        if (found) boost::put(edge_weight_t(), shpGraph[k], ed, weight);
+    } else {
+        tie(ed, found) = edge(i, j, shpGraph[k]);
+        if (found) boost::put(edge_weight_t(), shpGraph[k], ed, weight);
+    }
 }
 
 void Model::insertPenalties(double penalty) {
@@ -295,8 +353,6 @@ bool Model::isAcyclic() {
         add_edge(arcsReturn[i].o, arcsReturn[i].d, 1, G);
     }
 
-    // getchar();
-    
     vector<int> component(n), discover_time(n);
     vector<default_color_type> color(n);
     vector<Vertex> rootG(n);
@@ -328,29 +384,30 @@ int Model::heuristic() {
             make_iterator_property_map(distance.begin(), get(vertex_index, heuristicGraph))));
 
     for (auto k : graph->terminals) 
-        if (distance[k] > graph->getParamDelay()) 
+        if (!graph->noPath[k] || distance[k] > graph->getParamDelay()) 
             notAttended[k] = true;
 
     int actual, jitter, count = 0;
     for (auto t : graph->terminals) {
-        actual = t, jitter = 0;
-        while (actual != graph->getRoot()) {
-            jitter += graph->getJitter(predecessors[actual], actual);
-            actual = predecessors[actual];
-            // cout << actual << " - " << graph->getRoot() << endl;
-            // getchar();
+        if (!graph->noPath[t]) {
+            actual = t, jitter = 0;
+            while (actual != graph->getRoot()) {
+                jitter += graph->getJitter(predecessors[actual], actual);
+                actual = predecessors[actual];
+            }
+            if (jitter > graph->getParamJitter())
+                notAttended[t] = true;
+            jitterDistance[t] = jitter;
         }
-        if (jitter > graph->getParamJitter())
-            notAttended[t] = true;
-        jitterDistance[t] = jitter;
     }
 
     for (auto k : graph->terminals) {
-        for (auto l : graph->terminals) {
-            if (l != k && !notAttended[k] && !notAttended[l]) {
-                if (distance[k] - distance[l] > graph->getParamVariation()) {
-                    notAttended[distance[k] > distance[l] ? k : l] = true;
-                    // notAttended[l] = true;
+        if (!graph->noPath[k]) {
+            for (auto l : graph->terminals) {
+                if (!graph->noPath[l] && l != k && !notAttended[k] && !notAttended[l]) {
+                    if (distance[k] - distance[l] > graph->getParamVariation()) {
+                        notAttended[distance[k] > distance[l] ? k : l] = true;
+                    }
                 }
             }
         }
