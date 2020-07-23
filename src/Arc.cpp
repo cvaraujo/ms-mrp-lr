@@ -2,7 +2,7 @@
 // Created by carlos on 13/05/19.
 //
 
-#include "../inc/Arc.h"
+#include "Arc.h"
 
 
 Arc::Arc(int o, int d, int delay, int jitter, int bandwidth, int estimateLinkDuration) : o(o), d(d), delay(delay),
