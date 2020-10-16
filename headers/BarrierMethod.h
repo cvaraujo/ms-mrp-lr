@@ -6,67 +6,58 @@
 #define MRP_BARRIER_H
 
 #include "Graph.h"
-#include "boost/algorithm/string.hpp"
 #include <gurobi_c++.h>
 
 class BarrierMethod {
-    Graph *graph;
-    GRBEnv env = GRBEnv();
-    GRBModel model = GRBModel(env);
-    vector<vector<vector<GRBVar>>> f;
-    vector<vector<GRBVar>> y;
-    vector<GRBVar> z;
-    int beginConstrRel = 0, endConstrRel = 0,
-        beginConstrVar = 0, endConstrVar = 0,
-        beginConstrLeaf = 0, endConstrLeaf = 0;
+  Graph *graph;
+  GRBEnv env = GRBEnv();
+  GRBModel model = GRBModel(env);
+  vector<vector<vector<GRBVar>>> f;
+  vector<vector<GRBVar>> y;
+  vector<GRBVar> z;
 
+  void objectiveFunction();
 
-    void objectiveFunction();
+  void rootFlow();
 
-    void rootFlow();
+  void flowConservation();
 
-    void flowConservation();
+  void terminalsFlow();
 
-    void terminalsFlow();
+  void relXandY();
 
-    void relFandY();
+  void maxArcs();
 
-    void maxArcs();
+  void limDelayAndJitter();
 
-    void limDelayAndJitter();
+  void limVariation();
 
-    void limVariation();
+  void primeToTerminals();
 
-    void primeToTerminals();
-
-    void nonTerminalsLeafs();
+  void nonTerminalsLeafs();
 
 public:
-	vector<double> multipliersDelay, multipliersJitter;
-    vector<vector<double>> multipliersVar, multipliersLeaf;
-    vector<vector<vector<double>>> multipliersRel;
+  
+  BarrierMethod(Graph *graph);
 
-    BarrierMethod(Graph *graph);
+  void initialize();
 
-    void initialize();
-
-    void initializeLinear();
-
-    void initModel();
+  void initModel();
     
-    void initModelLinearRelaxation();
+  void solve();
 
-    void initModelCshp();
+  void getMultipliersDelay(vector<double> &multipliersDelay);
 
-    void solve();
+  void getMultipliersJitter(vector<double> &multipliersJitter);
 
-    void solveLinear();
+  void getMultipliersVariation(vector<vector<double>> &multipliersVar);
 
-    void barrierMethod();
+  void getMultipliersRelation(vector<vector<vector<double>>> &multipliersRel);
 
-    void showSolution(string instance);
+  void getMultipliersLeaf(vector<vector<double>> &multipliersLeaf);
 
-    int lagrangean();
+  void showSolution(string instance);
+
 
 };
 

@@ -12,63 +12,64 @@
 #include <chrono>
 
 class Lagrangean {
-    Graph *graph;
-    Model *model;
-    double thetaC, thetaP, thetaD, objectiveFunction, originalObjective, lambda, LB;
-    int progress, iter, maxIter, B, UB, time, iterBlb, iterBub, endTime, relaxNum;
-    bool feasible = true, heuristics = false;
-    vector<double> multipliersDelay, multipliersJitter;
-    vector<vector<double >> multipliersVar, multipliersLeaf;
-    vector<vector<vector<double >>> multipliersRel;
+  Graph *graph;
+  Model *model;
+  double thetaC, thetaP, thetaD, objectiveFunction, originalObjective, lambda, LB;
+  int progress, iter, maxIter, B, UB, time, iterBlb, iterBub, bmTime = 0, endTime, relaxNum;
+  
+  bool feasible = true, heuristics = false;
+  vector<double> multipliersDelay, multipliersJitter;
+  vector<vector<double >> multipliersVar, multipliersLeaf;
+  vector<vector<vector<double >>> multipliersRel;
 
-    bool solveModel();
+  bool solveModel();
 
-    void getGradientDelay(vector<double> &gradientDelay);
+  void getGradientDelay(vector<double> &gradientDelay);
 
-    void getGradientJitter(vector<double> &gradientJitter);
+  void getGradientJitter(vector<double> &gradientJitter);
 
-    void getGradientVariation(vector<vector<double>> &gradientVar);
+  void getGradientVariation(vector<vector<double>> &gradientVar);
 
-    void getGradientLeaf(vector<vector<double>> &gradientLeaf);
+  void getGradientLeaf(vector<vector<double>> &gradientLeaf);
 
-    void getGradientRelation(vector<vector<vector<double>>> &gradientRel);
+  void getGradientRelation(vector<vector<vector<double>>> &gradientRel);
 
-    double getNormDelay(vector<double> &gradientDelay);
+  double getNormDelay(vector<double> &gradientDelay);
 
-    double getNormJitter(vector<double> &gradientJitter);
+  double getNormJitter(vector<double> &gradientJitter);
 
-    double getNormRelation(vector<vector<vector<double>>> &gradient);
+  double getNormRelation(vector<vector<vector<double>>> &gradient);
 
-    double getNormLeaf(vector<vector<double>> &gradientLeaf);
+  double getNormLeaf(vector<vector<double>> &gradientLeaf);
 
-    double getNormVariation(vector<vector<double>> &gradient);
+  double getNormVariation(vector<vector<double>> &gradient);
 
 public:
-    Lagrangean(Graph *graph, int relaxNum, bool heuristics, bool barrierMethod, double lambda, int maxIter, int B, int time);
+  Lagrangean(Graph *graph, int relaxNum, bool heuristics, bool barrierMethod, double lambda, int maxIter, int B, int time);
 
 
 
-    double getNormTerminals(vector<double> &gradient);
+  double getNormTerminals(vector<double> &gradient);
 
 
 
-    void updatePPL();
+  void updatePPL();
 
-    void updatePathCostsNT(int q);
+  void updatePathCostsNT(int q);
 
-    double originalObjectiveValue();
+  double originalObjectiveValue();
 
-    bool isFeasible();
+  bool isFeasible();
 
-    void updateTreeCosts();
+  void updateTreeCosts();
 
-    void updatePathCosts(int k);
+  void updatePathCosts(int k);
 
-    int heuristic();
+  int heuristic();
 
-    double solve();
+  double solve();
 
-    void showSolution(string outputName);
+  void showSolution(string outputName);
 };
 
 

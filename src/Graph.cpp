@@ -169,7 +169,7 @@ void Graph::MVE(string outputName) {
     output.open(outputName, ofstream::app);
 
     // Create graph
-    for (int i = 1; i < n; i++)
+    for (int i = 0; i < n; i++)
         add_vertex(SPPRC_Graph_Vert_Prep(i, paramDelay), graphJitterMae);
     
     for (int u = 1; u < n; ++u)
@@ -280,8 +280,8 @@ void Graph::SAE(string outputName) {
                 if (arc->getD() != 0 && !removed[arc->getD()] && !removedY[i][arc->getD()]) 
                     add_edge(i, arc->getD(), arc->getJitter(), graphJitterSP);
 
-    for (i = 1; i < n; i++) {
-        if (removed[i]) continue;
+    for (i = 0; i < n; i++) {
+      //        if (removed[i]) continue;
 
         distanceJitter = vector<int>(n);
 
@@ -552,8 +552,8 @@ void Graph::finishPreprocessing(string outputName, bool mve, bool sae) {
     output << "Arcs_rem: " << cntRemArcs << endl;
     output.close();
 
-    arcs[root].push_back(new Arc(root, 0, paramDelay, paramJitter, 0, 0));
-    for (auto dus : DuS) arcs[0].push_back(new Arc(0, dus, 1, 1, 0, 0)); 
+    arcs[root].push_back(new Arc(root, 0, paramDelay+1, paramJitter+1, 0, 0));
+    for (auto dus : DuS) arcs[0].push_back(new Arc(0, dus, 0, 0, 0, 0)); 
 
     cout << "Finishing preprocessing" << endl;
 }

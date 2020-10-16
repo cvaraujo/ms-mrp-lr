@@ -36,8 +36,8 @@ struct SPPRC_Graph_Vert_Prep {
 };
 
 struct SPPRC_Graph_Arc_Prep {
-    SPPRC_Graph_Arc_Prep(int n = 0, int c = 0, int r = 0) : num(n), cost(c), res(r) {}
-
+    SPPRC_Graph_Arc_Prep(int n = 0, int c = 0, int r = 0) : num(n), cost(c), res(r) {
+}
     int num;
     // traversal cost
     int cost;
@@ -46,7 +46,7 @@ struct SPPRC_Graph_Arc_Prep {
 };
 
 typedef adjacency_list<vecS, vecS, directedS, SPPRC_Graph_Vert_Prep, SPPRC_Graph_Arc_Prep> SPPRCGraphPrep;
-typedef adjacency_list<vecS, vecS, directedS, no_property, property<edge_weight_t, int>> BoostGraph;
+typedef adjacency_list<vecS, vecS, directedS, no_property, property<edge_weight_t, double>> BoostGraph;
 
 typedef graph_traits<BoostGraph>::edge_descriptor EdgeDescriptor;
 typedef graph_traits<BoostGraph>::vertex_descriptor VertexDescriptor;
