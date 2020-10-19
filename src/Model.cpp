@@ -1433,9 +1433,9 @@ int Model::subgradientHeuristic() {
 	      if (j != actual && predecessorsAux[j] == actual) {
 		delayPathAux[j] += diffDelay, jitterPathAux[j] += diffJitter;
 		if (delayPathAux[j] > graph->getParamDelay() || 
-		    jitterPathAux[j] > graph->getParamJitter() ||
+		    jitterPathAux[j] > graph->getParamJitter() /*||
 		    delayPathAux[j] < (delayPaths[selected] - graph->getParamVariation()) ||
-		    delayPathAux[j] > (delayPaths[selected] + graph->getParamVariation())) {
+		    delayPathAux[j] > (delayPaths[selected] + graph->getParamVariation())*/) {
 		  notAttendedAux[j] = true;
 		  losts++;
 		} else notAttendedAux[j] = false;

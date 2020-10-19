@@ -16,9 +16,10 @@ Lagrangean::Lagrangean(Graph *graph, int relaxNum, bool heuristics, bool barrier
   // Load the model: Graphs for paths and heuristics
   model = new Model(graph, relaxNum, heuristics);
 
-  LB = 0, UB = 0, iter = 0;
+  LB = 0, UB = graph->terminals.size(), iter = 0;
   if (heuristics) UB = model->initialHeuristic();
-
+  firstUB = UB;
+  
   int n = graph->getN();
   multipliersDelay = vector<double>(n);
   multipliersJitter = vector<double>(n);
@@ -194,18 +195,8 @@ double Lagrangean::solve() {
   while (iter < maxIter && endTime < time) {
 
     if (model->solve(multipliersDelay, multipliersJitter, multipliersVar, multipliersLeaf, multipliersRel)) {
-
-      //      for (auto k : graph->DuS) {
-	//	for (int i = 0; i < graph->getN(); i++) {
-	  //for (auto *arc : graph->arcs[i]) {
-	    //if (model->f[i][arc->getD()][k])
-	      //    cout << i << " - " << arc->getD() << " - " << k << endl;
-	      //}
-	  //}
-	//	getchar();
-	//      }
-
-
+      if (iter ==  0) firstLB = model->getObj();
+      
       if (relaxNum == 1 || relaxNum == 3) getGradientDelay(gradientDelay);
       if (relaxNum <= 2) getGradientJitter(gradientJitter);
 
@@ -234,14 +225,12 @@ double Lagrangean::solve() {
 
       if (heuristics) {
 	heuristicObj = model->getHeuristicObj();
-	// cout << "PPL: " << lpObj << ", Original: " << originalObj << ", heuristic: " << heuristicObj << endl;
-
 	if(heuristicObj < UB) {
 	  UB = heuristicObj, iterBub = iter;
 	  if ((UB - LB) / UB <= 0.0001) return UB;
 	}
       }
-      
+      //      cout << "PPL: " << lpObj << ", Original: " << originalObj << ", heuristic: " << heuristicObj << endl;
       // Step size 
       if (relaxNum == 1 || relaxNum == 3){
 	normDelay = getNormDelay(gradientDelay);
@@ -286,7 +275,6 @@ double Lagrangean::solve() {
 	    multipliersRel[i][arc->getD()][k] = max(0.0, multipliersRel[i][arc->getD()][k] + (gradientRel[i][arc->getD()][k] * thetaRel));
     
       cout << "(Feasible) Upper Bound = " << UB << ", (Relaxed) Lower Bound = " << LB << endl;
-      //      getchar();
       iter++;
       end = chrono::steady_clock::now();
       endTime = chrono::duration_cast<chrono::seconds>(end - start).count();
@@ -297,13 +285,14 @@ double Lagrangean::solve() {
 
 void Lagrangean::showSolution(string outputName) {
   ofstream output;
-  output.open(outputName);
+  output.open(outputName, ofstream::app);
 
-  output << lambda << " " << maxIter << " " << B << " " << time << endl;
-
-  output << UB << " " << ceil(LB) << " " << 100 * ((UB - LB) / UB) << endl;
-
-  output << iterBlb << " " << iterBub << " " << endTime << endl;
-
+  output << "First LB: " << firstLB << "\nLB: " << LB << "\nIter. LB: " << iterBlb << endl;
+  output << "First UB: " << firstUB << "\nUB: " << UB << "\nIter. UB: " << iterBub << endl;
+    
+  if (LB < 0) LB = 0;
+  
+  output << "gap: " << 100 * (double(UB - ceil(LB)) / double(UB)) << endl;
+  output << "BM. Time: " << bmTime << "\nRuntime: " << endTime << endl;
   output.close();
 }

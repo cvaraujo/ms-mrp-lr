@@ -14,8 +14,8 @@
 class Lagrangean {
   Graph *graph;
   Model *model;
-  double thetaC, thetaP, thetaD, objectiveFunction, originalObjective, lambda, LB;
-  int progress, iter, maxIter, B, UB, time, iterBlb, iterBub, bmTime = 0, endTime, relaxNum;
+  double thetaC, thetaP, thetaD, objectiveFunction, originalObjective, lambda, LB, firstLB;
+  int progress, iter, maxIter, B, UB, time, iterBlb, iterBub, bmTime = 0, endTime, relaxNum, firstUB;
   
   bool feasible = true, heuristics = false;
   vector<double> multipliersDelay, multipliersJitter;
