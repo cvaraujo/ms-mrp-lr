@@ -21,6 +21,7 @@ class Lagrangean {
   vector<double> multipliersDelay, multipliersJitter;
   vector<vector<double >> multipliersVar, multipliersLeaf;
   vector<vector<vector<double >>> multipliersRel;
+  vector<vector<int>> freqLB, freqUB;
 
   bool solveModel();
 

@@ -2,7 +2,7 @@
 // Created by carlos on 31/05/19.
 //
 
-#include "Lagrangean.h"
+#include "../headers/Lagrangean.h"
 
 Lagrangean::Lagrangean(Graph *graph, int relaxNum, bool heuristics, bool barrierMethod, double lambda, int maxIter, int B, int time) {
   Lagrangean::graph = graph;
@@ -26,6 +26,8 @@ Lagrangean::Lagrangean(Graph *graph, int relaxNum, bool heuristics, bool barrier
   multipliersVar = vector<vector<double >>(n, vector<double>(n));
   multipliersLeaf = vector<vector<double >>(n, vector<double>(n));
   multipliersRel = vector<vector<vector<double >>>(n, vector<vector<double>>(n, vector<double>(n)));
+  freqLB = vector<vector<int >>(n, vector<int>(n));
+  freqUB = vector<vector<int >>(n, vector<int>(n));
 
   if (barrierMethod) {
     auto start = chrono::steady_clock::now();
@@ -230,6 +232,16 @@ double Lagrangean::solve() {
 	  if ((UB - LB) / UB <= 0.0001) return UB;
 	}
       }
+
+        for (int i = 0; i < graph->getN(); i++) {
+            for (auto *arc : graph->arcs[i]) {
+                for (auto k : graph->DuS)
+                    if (model->f[i][arc->getD()][k])
+                        freqLB[i][arc->getD()] += 1;
+                if (model->treeY[i][arc->getD()])
+                    freqUB[i][arc->getD()] += 1;
+            }
+        }
       //      cout << "PPL: " << lpObj << ", Original: " << originalObj << ", heuristic: " << heuristicObj << endl;
       // Step size 
       if (relaxNum == 1 || relaxNum == 3){
@@ -274,7 +286,7 @@ double Lagrangean::solve() {
 	  for (auto *arc : graph->arcs[i]) 
 	    multipliersRel[i][arc->getD()][k] = max(0.0, multipliersRel[i][arc->getD()][k] + (gradientRel[i][arc->getD()][k] * thetaRel));
     
-      cout << "(Feasible) Upper Bound = " << UB << ", (Relaxed) Lower Bound = " << LB << endl;
+      //cout << "(Feasible) Upper Bound = " << UB << ", (Relaxed) Lower Bound = " << LB << endl;
       iter++;
       end = chrono::steady_clock::now();
       endTime = chrono::duration_cast<chrono::seconds>(end - start).count();
@@ -294,5 +306,14 @@ void Lagrangean::showSolution(string outputName) {
   
   output << "gap: " << 100 * (double(UB - ceil(LB)) / double(UB)) << endl;
   output << "BM. Time: " << bmTime << "\nRuntime: " << endTime << endl;
-  output.close();
+
+    for (int i = 0; i < graph->getN(); i++)
+        for (auto *arc : graph->arcs[i])
+            output << "FL " << i << " " << arc->getD() << " " << freqLB[i][arc->getD()] << endl;
+
+    for (int i = 0; i < graph->getN(); i++)
+        for (auto *arc : graph->arcs[i])
+            output << "FU " << i << " " << arc->getD() << " " << freqUB[i][arc->getD()] << endl;
+
+    output.close();
 }

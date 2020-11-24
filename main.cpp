@@ -1,7 +1,7 @@
 #include <iostream>
 #include <sstream>
-#include <Graph.h>
-#include <Lagrangean.h>
+#include "headers/Graph.h"
+#include "headers/Lagrangean.h"
 
 int main(int argc, const char *argv[]) {
   if (argc >= 12) {
@@ -19,6 +19,7 @@ int main(int argc, const char *argv[]) {
 
     if (mve) graph->MVE(argv[4]);
     if (sae) graph->SAE(argv[4]);
+    graph->loadPreprocessing(argv[13]);
     graph->finishPreprocessing(argv[4], mve, sae);
     // ./MSLagrangean relaxation graph.txt param.txt result.txt
     // MVE SAE barrierMethod heuristics 

@@ -271,8 +271,7 @@ void BarrierMethod::getMultipliersRelation(vector<vector<vector<double>>> &multi
 void BarrierMethod::getMultipliersLeaf(vector<vector<double>> &multipliersLeaf) {
   for (auto q : graph->DuS) {
     for (auto e : graph->DuS) {
-      if (e != q) {
-	auto constr = model.getConstrByName("non_terminals_leafs_" + to_string(q) + "_" + to_string(e));
+      if (e != q) {auto constr = model.getConstrByName("non_terminals_leafs_" + to_string(q) + "_" + to_string(e));
 	multipliersLeaf[q][e] = abs(constr.get(GRB_DoubleAttr_Pi));
       }       
     }

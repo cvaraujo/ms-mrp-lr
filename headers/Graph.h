@@ -28,21 +28,21 @@ using namespace std;
 using namespace boost;
 
 struct SPPRC_Graph_Vert_Prep {
-    SPPRC_Graph_Vert_Prep(int n = 0, int c = 0) : num(n), con(c) {}
+  SPPRC_Graph_Vert_Prep(int n = 0, int c = 0) : num(n), con(c) {}
 
-    int num;
-    // Resource consumed
-    int con;
+  int num;
+  // Resource consumed
+  int con;
 };
 
 struct SPPRC_Graph_Arc_Prep {
-    SPPRC_Graph_Arc_Prep(int n = 0, int c = 0, int r = 0) : num(n), cost(c), res(r) {
-}
-    int num;
-    // traversal cost
-    int cost;
-    // traversal resource
-    int res;
+  SPPRC_Graph_Arc_Prep(int n = 0, int c = 0, int r = 0) : num(n), cost(c), res(r) {
+  }
+  int num;
+  // traversal cost
+  int cost;
+  // traversal resource
+  int res;
 };
 
 typedef adjacency_list<vecS, vecS, directedS, SPPRC_Graph_Vert_Prep, SPPRC_Graph_Arc_Prep> SPPRCGraphPrep;
@@ -55,70 +55,72 @@ typedef graph_traits<SPPRCGraphPrep>::vertex_descriptor vertex_descriptor;
 typedef graph_traits<SPPRCGraphPrep>::edge_descriptor edge_descriptor;
 
 class Graph {
-    int n, m, root, cntRemoved, paramDelay, paramJitter, paramVariation, paramBandwidth, bigMDelay = 0, bigMJitter = 0;
+  int n, m, root, cntRemoved, paramDelay, paramJitter, paramVariation, paramBandwidth, bigMDelay = 0, bigMJitter = 0;
 
-    vector<vertex_descriptor> predecessors;
-    vector<int> distance;
+  vector<vertex_descriptor> predecessors;
+  vector<int> distance;
 
 public:
-    BoostGraph preProcessing;
-    vector<vector<Arc *>> arcs;
-    vector<int> terminals, nonTerminals, DuS, delayVector, jitterVector;
-    vector<bool> removed, noPath;
-    vector<vector<bool>> removedY;
-    vector<vector<vector<bool>>> removedF;
+  BoostGraph preProcessing;
+  vector<vector<Arc *>> arcs;
+  vector<vector<pair<int, int>>> costs;
+  vector<int> terminals, nonTerminals, DuS, delayVector, jitterVector;
+  vector<pair<int, int>> pathValues;    
+  vector<bool> removed, noPath;
+  vector<vector<bool>> removedY;
+  vector<vector<vector<bool>>> removedF;
 
-    Graph(string instance, string param, string outputName);
+  Graph(string instance, string param, string outputName);
 
-    void SAE(string outputName);
+  void SAE(string outputName);
 
-    void MVE(string outputName);
+  void MVE(string outputName);
 
-    void finishPreprocessing(string outputName, bool mve, bool sae);
+  void finishPreprocessing(string outputName, bool mve, bool sae);
 
-    void graphReduction();
+  void loadPreprocessing(string filename);
 
-    void showGraph();
+  void showGraph();
 
-    int getN() const;
+  int getN() const;
 
-    void setN(int n);
+  void setN(int n);
 
-    int getM() const;
+  int getM() const;
 
-    void setM(int m);
+  void setM(int m);
 
-    int getParamDelay() const;
+  int getParamDelay() const;
 
-    void setParamDelay(int paramDelay);
+  void setParamDelay(int paramDelay);
 
-    int getParamJitter() const;
+  int getParamJitter() const;
 
-    void setParamJitter(int paramJitter);
+  void setParamJitter(int paramJitter);
 
-    int getParamVariation() const;
+  int getParamVariation() const;
 
-    void setParamVariation(int paramVariation);
+  void setParamVariation(int paramVariation);
 
-    int getParamBandwidth() const;
+  int getParamBandwidth() const;
 
-    void setParamBandwidth(int paramBandwidth);
+  void setParamBandwidth(int paramBandwidth);
 
-    int getRoot() const;
+  int getRoot() const;
 
-    void setRoot(int root);
+  void setRoot(int root);
 
-    int getBigMDelay();
+  int getBigMDelay();
 
-    int getBigMJitter();
+  int getBigMJitter();
 
-    int getShpTerminal(int k);
+  int getShpTerminal(int k);
 
-    int getNAfterRemoved();
+  int getNAfterRemoved();
 
-    int getDelay(int i, int j);
+  int getDelay(int i, int j);
 
-    int getJitter(int i, int j);
+  int getJitter(int i, int j);
 
 };
 

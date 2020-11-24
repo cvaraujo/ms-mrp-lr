@@ -4,7 +4,7 @@
 //
 
 #include <iomanip>
-#include "Model.h"
+#include "../headers/Model.h"
 
 // data structures for shortest path problem with resource constraint
 // ResourceContainer model
@@ -322,656 +322,6 @@ void Model::updateEdgeBranching(int i, int j, double weight) {
   arcsReturn.push_back(Arc_edmonds{i, j, weight});
 }
 
-double Model::makeModelRL1(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel) {
-  try {  
-    GRBEnv env = GRBEnv();
-    GRBModel model = GRBModel(env);
-
-    int i, j, o, d, n = graph->getN();
-
-    env.set("LogFile", "MS_mip.log");
-    env.start();
-
-    vector<vector<vector<GRBVar>>> f_model = vector<vector<vector<GRBVar>>>(n, vector<vector<GRBVar>>(n, vector<GRBVar>(n)));
-    vector<vector<GRBVar>> y_model = vector<vector<GRBVar>>(n, vector<GRBVar>(n));
-    vector<GRBVar> z_model = vector<GRBVar>(n);
-
-    char name[30];
-    for (i = 0; i < n; i++) {
-      for (auto *arc : graph->arcs[i]) {
-	d = arc->getD();
-	sprintf(name, "y_%d_%d", i, d);
-	y_model[i][d] = model.addVar(0.0, 1.0, 0, GRB_BINARY, name);
-	for (int q: graph->DuS) {
-	  sprintf(name, "f_%d_%d_%d", i, d, q);
-	  if (graph->removedF[i][d][q]) f_model[i][d][q] = model.addVar(0.0, 0.0, 0, GRB_BINARY, name); 
-	  else f_model[i][d][q] = model.addVar(0.0, 1.0, 0, GRB_BINARY, name);
-	}
-      }
-    }
-
-    sprintf(name, "z_%d", k);
-    z_model[k] = model.addVar(0.0, 1.0, 0.0, GRB_BINARY, name);
-    model.update();
-
-    // Root Flow
-    int root = graph->getRoot();
-    GRBLinExpr flowExpr, rootExpr;
-    for (o = 0; o < n; o++) {
-      for (auto *arc : graph->arcs[o]) {
-	d = arc->getD();
-	if (o == root) flowExpr += f_model[root][d][k];
-	else if (d == root) rootExpr += f_model[o][root][k];
-      }
-    }
-    model.addConstr((flowExpr - rootExpr) == 1, "root_flow_all_" + to_string(k));
-    cout << "Flow on root node" << endl;
-  
-    // Flow conservation
-    for (auto q : graph->DuS) {
-      for (int j = 0; j < graph->getN(); j++) {
-	if (j != root && j != q) {
-	  GRBLinExpr flowIn, flowOut;
-	  for (o = 0; o < n; o++) {
-	    for (auto *arc : graph->arcs[o]) {
-	      d = arc->getD();
-	      if (o == j) flowOut += f_model[j][d][q];
-	      if (d == j) flowIn += f_model[o][j][q];
-	    }
-	  }
-	  model.addConstr((flowIn - flowOut) == 0, "flow_conservation_" + to_string(j) + "_" + to_string(q));
-	}
-      }
-    }
-    cout << "Flow conservation" << endl;
-
-    // Terminals flow
-    for (auto q : graph->DuS) {
-      GRBLinExpr flowIn, flowOut;
-      for (o = 0; o < n; o++) {
-	for (auto *arc : graph->arcs[o]) {
-	  d = arc->getD();
-	  if (o == q) flowOut += f_model[q][d][q];
-	  if (d == q) flowIn += f_model[o][q][q];
-	}
-      }
-      model.addConstr((flowOut - flowIn) == -1, "flow_on_terminals_" + to_string(q));
-    }
-    cout << "Flow on terminals" << endl;
-
-    // Max Arcs
-    GRBLinExpr totalArcs;
-    for (o = 0; o < n; o++)
-      for (auto *arc : graph->arcs[o])
-	totalArcs += y_model[arc->getO()][arc->getD()];
-    model.addConstr(totalArcs == (n - 1), "maximum_of_arcs");
-    cout << "maximum of arcs in the tree" << endl;
-
-    // Force artificial node
-    model.addConstr(y_model[root][0] == 1);
-    cout << "Force artificial node" << endl;
-
-    // auxiliar constraint
-    model.addConstr(z_model[k] >= f_model[0][k][k], "prime_to_terminals_" + to_string(k));
-    model.update();
-
-    // Objective function
-    GRBLinExpr objective;
-    int bigMK, bigML;
-    double edgeCostAux = 0;
-    /*
-    for (auto l : graph->terminals)
-      if (k != l)
-	edgeCostAux += (multipliersVar[k][l] - multipliersVar[l][k]);
-        
-    for (int i = 1; i < n; i++) {
-      for (auto *arc : graph->arcs[i]){
-	j = arc->getD();
-	objective += f_model[i][j][k] * (arc->getDelay() * (edgeCostAux + multipliersDelay[k]) + arc->getJitter() * multipliersJitter[k] + multipliersRel[i][j][k]);
-      }
-    }
-
-    for (auto *arc : graph->arcs[0]) {
-      j = arc->getD();
-      if (j != k)
-	objective += f_model[0][j][k] * (arc->getDelay() * (edgeCostAux + multipliersDelay[k]) + arc->getJitter() * multipliersJitter[k] + multipliersRel[0][j][k] + multipliersLeaf[j][k]);
-    }
-    
-    */
-    for (int i = 0; i < n; i++) {
-      for (auto *arc : graph->arcs[i]) {
-	j = arc->getD();
-	//objective += f_model[i][j][k] * (multipliersRel[i][j][k]);
-	for (auto l : graph->terminals)
-	  if (k != l)
-	    objective += f_model[i][j][k] * (arc->getDelay() * (multipliersVar[k][l] - multipliersVar[l][k]));
-	    //objective += multipliersVar[k][l] * (arc->getDelay() * (f_model[i][j][k] - f_model[i][j][l]));
-      }
-    }
-
-    for (auto j : graph->DuS)
-      if (k != j)
-	//objective += f[0][j][k] * multipliersLeaf[j][k];
-
-    for (int i = 0; i < n; i++) {
-      for (auto *arc : graph->arcs[i]) {
-	j = arc->getD();
-	//objective += multipliersDelay[k] * (f_model[i][j][k] * arc->getDelay());
-	//objective += multipliersJitter[k] * (f_model[i][j][k] * arc->getJitter());
-      }
-    }
-    
-    model.setObjective(objective, GRB_MINIMIZE);
-    model.update();
-    cout << "Objective function RL01" << endl;
-
-    model.set("TimeLimit", "3600.0");
-    model.set("OutputFlag", "0");
-    model.update();
-    model.write("primeiro.lp");
-    model.optimize();
-
-    for (i = 0; i < n; i++)
-      for (auto *arc : graph->arcs[i])
-	if (f_model[i][arc->getD()][k].get(GRB_DoubleAttr_X) > 0)
-	  f[i][arc->getD()][k] = true;
-    if (z_model[k].get(GRB_DoubleAttr_X) > 0) z[i] = true;
-
-    cout << model.get(GRB_DoubleAttr_ObjVal) << endl;
-    getchar();
-    return model.get(GRB_DoubleAttr_ObjVal);
-
-  } catch (GRBException &ex) {
-    cout << ex.getMessage() << endl;
-    exit(EXIT_FAILURE);
-  }
-}
-
-double Model::makeModelRL2(int k, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel) {
-  try {
-    GRBEnv env = GRBEnv();
-    GRBModel model = GRBModel(env);
-
-    int i, j, o, d, n = graph->getN();
-
-    env.set("LogFile", "MS_mip.log");
-    env.start();
-
-    vector<vector<vector<GRBVar>>> f = vector<vector<vector<GRBVar>>>(n, vector<vector<GRBVar>>(n, vector<GRBVar>(n)));
-    vector<vector<GRBVar>> y = vector<vector<GRBVar>>(n, vector<GRBVar>(n));
-    vector<GRBVar> z = vector<GRBVar>(n);
-
-    char name[30];
-    for (i = 0; i < n; i++) {
-      for (auto *arc : graph->arcs[i]) {
-	d = arc->getD();
-	sprintf(name, "y_%d_%d", i, d);
-	y[i][d] = model.addVar(0.0, 1.0, 0, GRB_BINARY, name);
-	for (int q: graph->DuS) {
-	  sprintf(name, "f_%d_%d_%d", i, d, q);
-	  if (graph->removedF[i][d][q]) f[i][d][q] = model.addVar(0.0, 0.0, 0, GRB_BINARY, name); 
-	  else f[i][d][q] = model.addVar(0.0, 1.0, 0, GRB_BINARY, name);
-	}
-      }
-    }
-
-    sprintf(name, "z_%d", k);
-    z[k] = model.addVar(0.0, 1.0, 0.0, GRB_BINARY, name);
-    model.update();
-
-    // Root Flow
-    int root = graph->getRoot();
-    GRBLinExpr flowExpr, rootExpr;
-    for (o = 0; o < n; o++) {
-      for (auto *arc : graph->arcs[o]) {
-	d = arc->getD();
-	if (o == root) flowExpr += f[root][d][k];
-	else if (d == root) rootExpr += f[o][root][k];
-      }
-    }
-    model.addConstr((flowExpr - rootExpr) == 1, "root_flow_all_" + to_string(k));
-    cout << "Flow on root node" << endl;
-  
-    // Flow conservation
-    for (auto q : graph->DuS) {
-      for (int j = 0; j < graph->getN(); j++) {
-	if (j != root && j != q) {
-	  GRBLinExpr flowIn, flowOut;
-	  for (o = 0; o < n; o++) {
-	    for (auto *arc : graph->arcs[o]) {
-	      d = arc->getD();
-	      if (o == j) flowOut += f[j][d][q];
-	      if (d == j) flowIn += f[o][j][q];
-	    }
-	  }
-	  model.addConstr((flowIn - flowOut) == 0, "flow_conservation_" + to_string(j) + "_" + to_string(q));
-	}
-      }
-    }
-    cout << "Flow conservation" << endl;
-
-    // Terminals flow
-    for (auto q : graph->DuS) {
-      GRBLinExpr flowIn, flowOut;
-      for (o = 0; o < n; o++) {
-	for (auto *arc : graph->arcs[o]) {
-	  d = arc->getD();
-	  if (o == q) flowOut += f[q][d][q];
-	  if (d == q) flowIn += f[o][q][q];
-	}
-      }
-      model.addConstr((flowOut - flowIn) == -1, "flow_on_terminals_" + to_string(q));
-    }
-    cout << "Flow on terminals" << endl;
-
-    // Max Arcs
-    GRBLinExpr totalArcs;
-    for (o = 0; o < n; o++)
-      for (auto *arc : graph->arcs[o])
-	totalArcs += y[o][arc->getD()];
-    model.addConstr(totalArcs == (n - 1), "maximum_of_arcs");
-    cout << "maximum of arcs in the tree" << endl;
-
-    // Delay limit
-    int paramDelay;
-    GRBLinExpr limDelay;
-    for (i = 0; i < n; i++) {
-      for (auto *arc : graph->arcs[i]) {
-	j = arc->getD();
-	limDelay += arc->getDelay() * f[i][j][k];
-      }
-    }
-    paramDelay = graph->getParamDelay();
-    model.addConstr(limDelay <= (paramDelay + (graph->getBigMDelay() - paramDelay) * z[k]), "delay_lim_" + to_string(k));
-
-    model.update();
-    cout << "Delay limit" << endl;
-  
-    // Force artificial node
-    model.addConstr(y[root][0] == 1);
-    cout << "Force artificial node" << endl;
-
-    // auxiliar constraint
-    model.addConstr(z[k] >= f[0][k][k], "prime_to_terminals_" + to_string(k));
-    model.update();
-
-    // Objective function
-    GRBLinExpr objective;
-    int bigMK, bigML;
-
-    for (i = 0; i < n; i++) {
-      for (auto *arc : graph->arcs[i]) {
-	j = arc->getD();
-	objective += multipliersJitter[k] * (arc->getJitter() * f[i][j][k] - (graph->getParamJitter() + z[k] * graph->getBigMJitter()));
-      }
-    }
-
-    objective += z[k];
-    for (auto l : graph->terminals) {
-      if (k != l) {
-	bigMK = graph->getBigMDelay() - min(graph->getShpTerminal(l) + graph->getParamVariation(), graph->getParamDelay());
-	bigML = graph->getParamDelay() - graph->getParamVariation() - graph->getShpTerminal(l);	
-	for (i = 0; i < n; i++) {
-	  for (auto *arc : graph->arcs[i]) {
-	    j = arc->getD();
-	    objective += multipliersVar[k][l] * ((arc->getDelay() * (f[i][j][k] - f[i][j][l])) - (graph->getParamVariation() + bigMK * z[k] + bigML * z[l]));
-	  }
-	}
-      }
-    }
-
-    for (auto q : graph->DuS) {
-      for (i = 0; i < n; i++) 
-	for (auto *arc : graph->arcs[i]) objective += multipliersRel[i][arc->getD()][q] * (f[i][arc->getD()][q] - y[i][arc->getD()]);
-      for (auto e : graph->DuS) 
-	if (q != e) objective += multipliersLeaf[q][e] * (f[0][q][e]);
-    }
-
-    model.setObjective(objective, GRB_MINIMIZE);
-    model.update();
-    cout << "Objective function RL02" << endl;
-
-    model.set("TimeLimit", "3600.0");
-    model.set("OutputFlag", "0");
-    model.update();
-    model.write("../model.lp");
-    model.optimize();
-
-    for (i = 0; i < n; i++)
-      for (auto *arc : graph->arcs[i])
-	if (f[i][arc->getD()][k].get(GRB_DoubleAttr_X) > 0)
-	  Model::f[i][arc->getD()][k] = true;
-    if (z[k].get(GRB_DoubleAttr_X) > 0)
-      Model::z[i] = true;
-
-    return model.get(GRB_DoubleAttr_ObjVal);
-  } catch (GRBException &ex) {
-    cout << ex.getMessage() << endl;
-    exit(EXIT_FAILURE);
-  }
-}
-
-double Model::makeModelRL3(int k, vector<double> &multipliersDelay, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel) {
-  try {  
-    GRBEnv env = GRBEnv();
-    GRBModel model = GRBModel(env);;
-
-    int i, j, o, d, n = graph->getN();
-
-    env.set("LogFile", "MS_mip.log");
-    env.start();
-
-    vector<vector<vector<GRBVar>>> f = vector<vector<vector<GRBVar>>>(n, vector<vector<GRBVar>>(n, vector<GRBVar>(n)));
-    vector<vector<GRBVar>> y = vector<vector<GRBVar>>(n, vector<GRBVar>(n));
-    vector<GRBVar> z = vector<GRBVar>(n);
-
-    char name[30];
-    for (i = 0; i < n; i++) {
-      for (auto *arc : graph->arcs[i]) {
-	d = arc->getD();
-	sprintf(name, "y_%d_%d", i, d);
-	y[i][d] = model.addVar(0.0, 1.0, 0, GRB_BINARY, name);
-	for (int q: graph->DuS) {
-	  sprintf(name, "f_%d_%d_%d", i, d, q);
-	  if (graph->removedF[i][d][q]) f[i][d][q] = model.addVar(0.0, 0.0, 0, GRB_BINARY, name); 
-	  else f[i][d][q] = model.addVar(0.0, 1.0, 0, GRB_BINARY, name);
-	}
-      }
-    }
-
-    sprintf(name, "z_%d", k);
-    z[k] = model.addVar(0.0, 1.0, 0.0, GRB_BINARY, name);
-    model.update();
-
-    // Root Flow
-    int root = graph->getRoot();
-    GRBLinExpr flowExpr, rootExpr;
-    for (o = 0; o < n; o++) {
-      for (auto *arc : graph->arcs[o]) {
-	d = arc->getD();
-	if (o == root) flowExpr += f[root][d][k];
-	else if (d == root) rootExpr += f[o][root][k];
-      }
-    }
-    model.addConstr((flowExpr - rootExpr) == 1, "root_flow_all_" + to_string(k));
-    cout << "Flow on root node" << endl;
-  
-    // Flow conservation
-    for (auto q : graph->DuS) {
-      for (int j = 0; j < graph->getN(); j++) {
-	if (j != root && j != q) {
-	  GRBLinExpr flowIn, flowOut;
-	  for (o = 0; o < n; o++) {
-	    for (auto *arc : graph->arcs[o]) {
-	      d = arc->getD();
-	      if (o == j) flowOut += f[j][d][q];
-	      if (d == j) flowIn += f[o][j][q];
-	    }
-	  }
-	  model.addConstr((flowIn - flowOut) == 0, "flow_conservation_" + to_string(j) + "_" + to_string(q));
-	}
-      }
-    }
-    cout << "Flow conservation" << endl;
-
-    // Terminals flow
-    for (auto q : graph->DuS) {
-      GRBLinExpr flowIn, flowOut;
-      for (o = 0; o < n; o++) {
-	for (auto *arc : graph->arcs[o]) {
-	  d = arc->getD();
-	  if (o == q) flowOut += f[q][d][q];
-	  if (d == q) flowIn += f[o][q][q];
-	}
-      }
-      model.addConstr((flowOut - flowIn) == -1, "flow_on_terminals_" + to_string(q));
-    }
-    cout << "Flow on terminals" << endl;
-
-    // Max Arcs
-    GRBLinExpr totalArcs;
-    for (o = 0; o < n; o++)
-      for (auto *arc : graph->arcs[o])
-	totalArcs += y[arc->getO()][arc->getD()];
-    model.addConstr(totalArcs == (n - 1), "maximum_of_arcs");
-    cout << "maximum of arcs in the tree" << endl;
-
-    // Jitter limit
-    int paramJitter;
-    GRBLinExpr limJitter;
-    for (i = 0; i < graph->getN(); i++) {
-      for (auto *arc : graph->arcs[i]) {
-	j = arc->getD();
-	limJitter += arc->getJitter() * f[i][j][k];
-      }
-    }
-
-    paramJitter = graph->getParamJitter();
-    model.addConstr(limJitter <= (paramJitter + (graph->getBigMJitter() - paramJitter) * z[k]), "jitter_limit_" + to_string(k));
-    cout << "Jitter limit" << endl;
-  
-    // Force artificial node
-    model.addConstr(y[graph->getRoot()][0] == 1);
-    cout << "Force artificial node" << endl;
-
-    // auxiliar constraint
-    model.addConstr(z[k] >= f[0][k][k], "prime_to_terminals_" + to_string(k));
-    model.update();
-
-    // Objective function
-    GRBLinExpr objective;
-    int bigMK, bigML;
-
-    for (i = 0; i < n; i++) {
-      for (auto *arc : graph->arcs[i]) {
-	j = arc->getD();
-	objective += multipliersDelay[k] * (arc->getDelay() * f[i][j][k] - (graph->getParamDelay() + z[k] * graph->getBigMDelay()));
-      }
-    }
-
-    objective += z[k];
-    for (auto l : graph->terminals) {
-      if (k != l) {
-	bigMK = graph->getBigMDelay() - min(graph->getShpTerminal(l) + graph->getParamVariation(), graph->getParamDelay());
-	bigML = graph->getParamDelay() - graph->getParamVariation() - graph->getShpTerminal(l);	
-	for (i = 0; i < n; i++) {
-	  for (auto *arc : graph->arcs[i]) {
-	    j = arc->getD();
-	    objective += multipliersVar[k][l] * ((arc->getDelay() * (f[i][j][k] - f[i][j][l])) - (graph->getParamVariation() + bigMK * z[k] + bigML * z[l]));
-	  }
-	}
-      }
-    }
-
-    for (auto q : graph->DuS) {
-      for (i = 0; i < n; i++) 
-	for (auto *arc : graph->arcs[i]) objective += multipliersRel[i][arc->getD()][q] * (f[i][arc->getD()][q] - y[i][arc->getD()]);
-      for (auto e : graph->DuS) 
-	if (q != e) objective += multipliersLeaf[q][e] * (f[0][q][e]);
-    }
-
-    model.setObjective(objective, GRB_MINIMIZE);
-    model.update();
-    cout << "Objective function RL01" << endl;
-
-    model.set("TimeLimit", "3600.0");
-    model.set("OutputFlag", "0");
-    model.update();
-    model.write("../model.lp");
-    model.optimize();
-
-    for (i = 0; i < n; i++)
-      for (auto *arc : graph->arcs[i])
-	if (f[i][arc->getD()][k].get(GRB_DoubleAttr_X) > 0)
-	  Model::f[i][arc->getD()][k] = true;
-    if (z[k].get(GRB_DoubleAttr_X) > 0)
-      Model::z[i] = true;
-
-    return model.get(GRB_DoubleAttr_ObjVal);
-  } catch (GRBException &ex) {
-    cout << ex.getMessage() << endl;
-    exit(EXIT_FAILURE);
-  }
-}
-
-double Model::makeModelRL4(int k, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel) {
-  try {
-    GRBEnv env = GRBEnv();
-    GRBModel model = GRBModel(env);
-
-    int i, j, o, d, n = graph->getN();
-
-    env.set("LogFile", "MS_mip.log");
-    env.start();
-
-    vector<vector<vector<GRBVar>>> f = vector<vector<vector<GRBVar>>>(n, vector<vector<GRBVar>>(n, vector<GRBVar>(n)));
-    vector<vector<GRBVar>> y = vector<vector<GRBVar>>(n, vector<GRBVar>(n));
-    vector<GRBVar> z = vector<GRBVar>(n);
-
-    char name[30];
-    for (i = 0; i < n; i++) {
-      for (auto *arc : graph->arcs[i]) {
-	d = arc->getD();
-	sprintf(name, "y_%d_%d", i, d);
-	y[i][d] = model.addVar(0.0, 1.0, 0, GRB_BINARY, name);
-	for (int q: graph->DuS) {
-	  sprintf(name, "f_%d_%d_%d", i, d, q);
-	  if (graph->removedF[i][d][q]) f[i][d][q] = model.addVar(0.0, 0.0, 0, GRB_BINARY, name); 
-	  else f[i][d][q] = model.addVar(0.0, 1.0, 0, GRB_BINARY, name);
-	}
-      }
-    }
-
-    sprintf(name, "z_%d", k);
-    z[k] = model.addVar(0.0, 1.0, 0.0, GRB_BINARY, name);
-    model.update();
-
-    // Root Flow
-    int root = graph->getRoot();
-    GRBLinExpr flowExpr, rootExpr;
-    for (o = 0; o < n; o++) {
-      for (auto *arc : graph->arcs[o]) {
-	d = arc->getD();
-	if (o == root) flowExpr += f[root][d][k];
-	else if (d == root) rootExpr += f[o][root][k];
-      }
-    }
-    model.addConstr((flowExpr - rootExpr) == 1, "root_flow_all_" + to_string(k));
-    cout << "Flow on root node" << endl;
-  
-    // Flow conservation
-    for (auto q : graph->DuS) {
-      for (int j = 0; j < graph->getN(); j++) {
-	if (j != root && j != q) {
-	  GRBLinExpr flowIn, flowOut;
-	  for (o = 0; o < n; o++) {
-	    for (auto *arc : graph->arcs[o]) {
-	      d = arc->getD();
-	      if (o == j) flowOut += f[j][d][q];
-	      if (d == j) flowIn += f[o][j][q];
-	    }
-	  }
-	  model.addConstr((flowIn - flowOut) == 0, "flow_conservation_" + to_string(j) + "_" + to_string(q));
-	}
-      }
-    }
-    cout << "Flow conservation" << endl;
-
-    // Terminals flow
-    for (auto q : graph->DuS) {
-      GRBLinExpr flowIn, flowOut;
-      for (o = 0; o < n; o++) {
-	for (auto *arc : graph->arcs[o]) {
-	  d = arc->getD();
-	  if (o == q) flowOut += f[q][d][q];
-	  if (d == q) flowIn += f[o][q][q];
-	}
-      }
-      model.addConstr((flowOut - flowIn) == -1, "flow_on_terminals_" + to_string(q));
-    }
-    cout << "Flow on terminals" << endl;
-
-    // Max Arcs
-    GRBLinExpr totalArcs;
-    for (o = 0; o < n; o++)
-      for (auto *arc : graph->arcs[o])
-	totalArcs += y[arc->getO()][arc->getD()];
-    model.addConstr(totalArcs == (n - 1), "maximum_of_arcs");
-    cout << "maximum of arcs in the tree" << endl;
-
-    // Delay and JItter limit
-    int paramDelay, paramJitter;
-    GRBLinExpr limDelay, limJitter;
-    for (i = 0; i < n; i++) {
-      for (auto *arc : graph->arcs[i]) {
-	j = arc->getD();
-	limDelay += arc->getDelay() * f[i][j][k];
-	limJitter = arc->getJitter() * f[i][j][k];
-      }
-    }
-    paramDelay = graph->getParamDelay(), paramJitter = graph->getParamJitter();
-    model.addConstr(limDelay <= (paramDelay + (graph->getBigMDelay() - paramDelay) * z[k]), "delay_lim_" + to_string(k));
-
-    model.addConstr(limJitter <= (paramJitter + (graph->getBigMJitter() - paramJitter) * z[k]), "jitter_lim_" + to_string(k));
-    cout << "Delay and Jitter limits" << endl;
-  
-    // Force artificial node
-    model.addConstr(y[graph->getRoot()][0] == 1);
-    cout << "Force artificial node" << endl;
-
-    // auxiliar constraint
-    model.addConstr(z[k] >= f[0][k][k], "prime_to_terminals_" + to_string(k));
-    model.update();
-
-    // Objective function
-    GRBLinExpr objective;
-    int bigMK, bigML;
-
-    objective += z[k];
-    for (auto l : graph->terminals) {
-      if (k != l) {
-	bigMK = graph->getBigMDelay() - min(graph->getShpTerminal(l) + graph->getParamVariation(), graph->getParamDelay());
-	bigML = graph->getParamDelay() - graph->getParamVariation() - graph->getShpTerminal(l);	
-	for (i = 0; i < n; i++) {
-	  for (auto *arc : graph->arcs[i]) {
-	    j = arc->getD();
-	    objective += multipliersVar[k][l] * ((arc->getDelay() * (f[i][j][k] - f[i][j][l])) - (graph->getParamVariation() + bigMK * z[k] + bigML * z[l]));
-	  }
-	}
-      }
-    }
-
-    for (auto q : graph->DuS) {
-      for (i = 0; i < n; i++) 
-	for (auto *arc : graph->arcs[i]) objective += multipliersRel[i][arc->getD()][q] * (f[i][arc->getD()][q] - y[i][arc->getD()]);
-      for (auto e : graph->DuS) 
-	if (q != e) objective += multipliersLeaf[q][e] * (f[0][q][e]);
-    }
-
-    model.setObjective(objective, GRB_MINIMIZE);
-    model.update();
-    cout << "Objective function RL04" << endl;
-
-    model.set("TimeLimit", "3600.0");
-    model.set("OutputFlag", "0");
-    model.update();
-    model.write("../model.lp");
-    model.optimize();
-
-    for (i = 0; i < n; i++)
-      for (auto *arc : graph->arcs[i])
-	if (f[i][arc->getD()][k].get(GRB_DoubleAttr_X) > 0)
-	  Model::f[i][arc->getD()][k] = true;
-    if (z[k].get(GRB_DoubleAttr_X) > 0)
-      Model::z[i] = true;
-
-    return model.get(GRB_DoubleAttr_ObjVal);
-  } catch (GRBException &ex) {
-    cout << ex.getMessage() << endl;
-    exit(EXIT_FAILURE);
-  }
-}
-
 void Model::edmonds() {
   int i, j;
   vector<Edge> branching;
@@ -1008,15 +358,16 @@ double Model::shpTerminals(int k, vector<double> &multipliersDelay, vector<doubl
 				       weight_map(weightMap).distance_map(&distance[0]).predecessor_map(&parent[0]));
     
   // If exists negative cycle, compute a cshp with values of bigM as resource
-  if (!r) return makeModelRL1(k, multipliersDelay, multipliersJitter, multipliersVar, multipliersLeaf, multipliersRel);
-  else {
+  //if (!r)
+      //return makeModelRL1(k, multipliersDelay, multipliersJitter, multipliersVar, multipliersLeaf, multipliersRel);
+  //else {
     actual = k;
     while(actual != root) {
       f[parent[actual]][actual][k] = true;
       actual = parent[actual];
     }
     return distance[k];
-  }
+  //}
 }
 
 double Model::cshpTerminal1Res(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel) {
@@ -1035,8 +386,9 @@ double Model::cshpTerminal1Res(int k, vector<double> &multipliersDelay, vector<d
     
   // If exists negative cycle, compute a cshp with values of bigM as resource
   if (!r) {
-    if (relaxNum == 2) return makeModelRL2(k, multipliersDelay, multipliersVar, multipliersLeaf, multipliersRel);
-    else return makeModelRL3(k, multipliersJitter, multipliersVar, multipliersLeaf, multipliersRel);
+      cout << "Nagative" << endl;
+   // if (relaxNum == 2) return makeModelRL2(k, multipliersDelay, multipliersVar, multipliersLeaf, multipliersRel);
+   // else return makeModelRL3(k, multipliersJitter, multipliersVar, multipliersLeaf, multipliersRel);
   } else {
     vector<vector<graph_traits<SPPRCGraph1Res>::edge_descriptor>> opt_solutions;
     vector<spp_spp_1_res_cont> pareto_opt;
@@ -1110,10 +462,10 @@ double Model::cshpTerminal2Res(int k, vector<vector<double>> &multipliersVar, ve
     
   bool r = bellman_ford_shortest_paths(shpGraph[k], graph->getN(),
 				       weight_map(weightMap).distance_map(&distance[0]).predecessor_map(&parent[0]));
-    
+  
   // If exists negative cycle, compute a cshp with values of bigM as resource
   if (!r) {
-    return makeModelRL4(k, multipliersVar, multipliersLeaf, multipliersRel);
+    //return makeModelRL4(k, multipliersVar, multipliersLeaf, multipliersRel);
   } else {
     vector<vector<graph_traits<SPPRCGraph2Res>::edge_descriptor>> opt_solutions;
     vector<spp_spp_2_res_cont> pareto_opt;
@@ -1145,7 +497,7 @@ double Model::cshpTerminal2Res(int k, vector<vector<double>> &multipliersVar, ve
 	}
       }
 
-      if (minPath <= distance[k]+1) {
+      if (minPath < distance[k]+1) {
 	for (j = static_cast<int>(opt_solutions[indexMin].size())-1; j >= 0; --j) {
 	  i = source(opt_solutions[indexMin][j], cshpGraph2Res[k]);
 	  l = target(opt_solutions[indexMin][j], cshpGraph2Res[k]);
@@ -1154,6 +506,7 @@ double Model::cshpTerminal2Res(int k, vector<vector<double>> &multipliersVar, ve
 	return minPath;
       } else {
 	actual = k;
+    z[k] = true;
 	while(actual != root) {
 	  f[parent[actual]][actual][k] = true;
 	  actual = parent[actual];
@@ -1339,7 +692,7 @@ int Model::initialHeuristic() {
 
 int Model::subgradientHeuristic() {
   cout << "heuristic " << endl;
-  int obj = 0, i, j, n = graph->getN(), bestCand, root = graph->getRoot();
+  int i, j, n = graph->getN(), bestCand, root = graph->getRoot();
   vector<int> delayPaths = vector<int>(n), jitterPaths = vector<int>(n),
     predecessors = vector<int>(n), delayPathAux = vector<int>(n),
     jitterPathAux = vector<int>(n), predecessorsAux = vector<int>(n);
@@ -1362,13 +715,10 @@ int Model::subgradientHeuristic() {
       actual = predecessors[actual];
     }
     delayPaths[k] = delay, jitterPaths[k] = jitter;
+    if (delay > graph->getParamDelay() || jitter > graph->getParamJitter())
+        notAttended[k] = true;
   }
-
-  obj = 0;
-  for (auto k : graph->terminals) 
-    if (delayPaths[k] > graph->getParamDelay() || jitterPaths[k] > graph->getParamJitter())
-      notAttended[k] = true, obj++;
-
+ 
   // Select a terminal to fix as attend
   int diffDelay, diffJitter;
   bool canMove;
@@ -1411,12 +761,14 @@ int Model::subgradientHeuristic() {
 
 	if (bestCand != -1) {
 	  // create the temporary vectors
-	  notAttended[k] = false;
 	  canMove = true;
 	  losts = 0;
+	  notAttended[k] = false;
+	  vector<vector<int>> sub = vector<vector<int>>(n, vector<int>());
 	  for (i = 0; i < n; i++) {
 	    delayPathAux[i] = delayPaths[i], jitterPathAux[i] = jitterPaths[i], 
 	      predecessorsAux[i] = predecessors[i], notAttendedAux[i] = notAttended[i];
+	    sub[predecessors[i]].push_back(i);
 	  }
 
 	  // Evaluate the move                    
@@ -1426,29 +778,26 @@ int Model::subgradientHeuristic() {
 
 	  changed.erase(changed.begin(), changed.end());
 	  changed.push_back(k);
+	  
 	  while (!changed.empty()) {
 	    actual = changed.back();
 	    changed.pop_back();
-	    for (int j : graph->DuS) {
-	      if (j != actual && predecessorsAux[j] == actual) {
-		delayPathAux[j] += diffDelay, jitterPathAux[j] += diffJitter;
-		if (delayPathAux[j] > graph->getParamDelay() || 
-		    jitterPathAux[j] > graph->getParamJitter() /*||
-		    delayPathAux[j] < (delayPaths[selected] - graph->getParamVariation()) ||
-		    delayPathAux[j] > (delayPaths[selected] + graph->getParamVariation())*/) {
+
+	    for (int j : sub[actual]) {
+	      delayPathAux[j] += diffDelay, jitterPathAux[j] += diffJitter;
+	      if (delayPathAux[j] > graph->getParamDelay() || jitterPathAux[j] > graph->getParamJitter()) {
+		if (!notAttendedAux[j]) {
 		  notAttendedAux[j] = true;
 		  losts++;
-		} else notAttendedAux[j] = false;
-
-		if (losts >= 2 || (j == selected && notAttendedAux[j])) {
+		}
+	      } else notAttendedAux[j] = false;
+	      if (losts >= 2 || (j == selected && notAttendedAux[j])) {
 		  canMove = false;
 		  changed.erase(changed.begin(), changed.end());
 		  break;
-		} else changed.push_back(j);
-	      }
+	      } else changed.push_back(j);	      
 	    }
 	  }
-
 	  if (canMove) {
 	    for (i = 0; i < n; i++) {
 	      delayPaths[i] = delayPathAux[i], jitterPaths[i] = jitterPathAux[i], 
@@ -1460,48 +809,23 @@ int Model::subgradientHeuristic() {
     }
   }
 
-  int leqSelec = 0, geqSelec = 0; 
-  for (auto k : graph->terminals)
-    if (k != selected) {
-      if (delayPaths[k] < (delayPaths[selected] - graph->getParamVariation()) ||
-	  delayPaths[k] > (delayPaths[selected] + graph->getParamVariation()) ||
-	  delayPaths[k] > graph->getParamDelay() || jitterPaths[k] > graph->getParamJitter())
-	notAttended[k] = true;
-      else notAttended[k] = false;
+  vector<int> delays = vector<int>();
 
-      if (!notAttended[k]) {
-	if (delayPaths[k] <= delayPaths[selected]) leqSelec++;
-	else geqSelec++;
-      }
-    } 
-        
-  for (auto k : graph->terminals) {
-    if (k != selected && !notAttended[k]) {
-      for (auto l : graph->terminals) {
-	if (k != l && l != selected && !notAttended[l]) {
-	  if (delayPaths[k] - delayPaths[l] > graph->getParamVariation()) {
-	    if (leqSelec > geqSelec) {
-	      if (delayPaths[k] > delayPaths[selected]) {
-		notAttended[k] = true;
-		break;
-	      } else notAttended[l] = true;
-	    } else {
-	      if (delayPaths[k] < delayPaths[selected]) {
-		notAttended[k] = true;
-		break;
-	      } else notAttended[l] = true;
-	    }
-	  }
-	}
-      }
-    }
+  for (auto k : graph->terminals)
+    if (delayPaths[k] <= graph->getParamDelay() && jitterPaths[k] <= graph->getParamJitter())
+      delays.push_back(delayPaths[k]);
+  
+  sort(delays.begin(), delays.end());
+
+  int actMax = 0, p2 = 0, maxi = 0, fd;
+  for (i = 0; i < delays.size(); i++) {
+    fd = delays[i];
+
+    while (delays[p2] <= fd + graph->getParamVariation() && p2 < delays.size()) p2++;
+
+    if ((p2 - i) > maxi) maxi = (p2 - i);
   }
-
-  obj = 0;
-  for (auto k : graph->terminals)
-    if (notAttended[k]) obj++;
-    
-  return obj;
+  return graph->terminals.size() - maxi;
 }
 
 double Model::penalty1Rl (vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar) {
@@ -1618,7 +942,7 @@ void Model::updateArbCosts(vector<vector<vector<double>>> &multipliersRel) {
       j = arc->getD();
       sumMultipliers = 0;
       for (auto k : graph->DuS)
-	sumMultipliers -= multipliersRel[i][j][k];
+	    sumMultipliers -= multipliersRel[i][j][k];
       //      cout << i << " - " << j << " = " << sumMultipliers << endl;
       updateEdgeBranching(i, j, sumMultipliers);
     }
@@ -1695,11 +1019,11 @@ void Model::updatePathCostsTerminals(int k, vector<double> &multipliersDelay, ve
        if (j != k) updateEdgePath(0, j, k, true, multipliersRel[0][j][k] + multipliersLeaf[j][k]);
     }
 
-    for (i = 0; i < n; i++) {
+    for (i = 1; i < n; i++) {
       for (auto *arc : graph->arcs[i]) {
-	j = arc->getD();
-	updateEdgePath(i, j, k, true, multipliersRel[i][j][k]);
-	//cout << i << " - " << j << " - " << k << " = " << multipliersRel[i][j][k] << endl;
+        j = arc->getD();
+        updateEdgePath(i, j, k, true, multipliersRel[i][j][k]);
+        //cout << i << " - " << j << " - " << k << " = " << multipliersRel[i][j][k] << endl;
       }
     }
   }
@@ -1707,7 +1031,6 @@ void Model::updatePathCostsTerminals(int k, vector<double> &multipliersDelay, ve
 }
 
 bool Model::solve(vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel) {
-  //  cout << "Compute paths" << endl;
   initialize();
   objectiveFunction = 0;
   // Terminals 
@@ -1715,6 +1038,7 @@ bool Model::solve(vector<double> &multipliersDelay, vector<double> &multipliersJ
     if (graph->noPath[k]) {
       f[graph->getRoot()][0][k] = f[0][k][k] = true;
       objectiveFunction += (getEdgeShp(graph->getRoot(), 0, k) + getEdgeShp(0, k, k));
+      z[k] = true;
     } else {
       // Path to terminals
       updatePathCostsTerminals(k, multipliersDelay, multipliersJitter, multipliersVar, multipliersLeaf, multipliersRel);
@@ -1723,7 +1047,7 @@ bool Model::solve(vector<double> &multipliersDelay, vector<double> &multipliersJ
       else objectiveFunction += cshpTerminal2Res(k, multipliersVar, multipliersLeaf, multipliersRel);
     }
   }
-  cout << "CSHP: " << objectiveFunction << endl;
+  //cout << "CSHP: " << objectiveFunction << endl;
   // Non-terminals
   for (auto k : graph->nonTerminals) {
     if (graph->removed[k]) {
@@ -1735,28 +1059,30 @@ bool Model::solve(vector<double> &multipliersDelay, vector<double> &multipliersJ
       objectiveFunction += shpNonTerminal(k);
     }
   }
-  cout << "SHP: " << objectiveFunction << endl;
+  //cout << "SHP: " << objectiveFunction << endl;
+
+  // Tree and Arc selection
+  updateArbCosts(multipliersRel);
+  objectiveFunction += arcsSelection();
+  
   // Heuristics
   if (heuristics) {
     edmonds();
     heuristicObj = subgradientHeuristic();
   }
   
-  // Tree and Arc selection
-  updateArbCosts(multipliersRel);
-  objectiveFunction += arcsSelection();
-
-  cout << "Arb: " << objectiveFunction << endl;
+  //cout << "Arb: " << objectiveFunction << endl;
   // Penalties
   if (relaxNum == 1) objectiveFunction += penalty1Rl(multipliersDelay, multipliersJitter, multipliersVar);
   else if (relaxNum == 2) objectiveFunction += penalty2Rl(multipliersJitter, multipliersVar);
   else if (relaxNum == 3) objectiveFunction += penalty3Rl(multipliersDelay, multipliersVar);
   else {
     for (auto k : graph->terminals)
-      if (z[k])	objectiveFunction += 1;
-  }//objectiveFunction += penalty4Rl(multipliersVar);
-  cout << "PPL: " << objectiveFunction << endl;
-
+      if (z[k]) {
+          objectiveFunction += 1;
+      }
+  }
+  //cout << "PPL: " << objectiveFunction << endl;
   return true;
 }
 
