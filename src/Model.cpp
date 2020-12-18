@@ -344,7 +344,7 @@ void Model::edmonds() {
   }
 }
 
-double Model::shpTerminals(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel) {
+double Model::shpTerminals(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<vector<double>>> &multipliersRel) {
   int actual, i, j, l, root = graph->getRoot();
   double minPath, minSP, objective;
 
@@ -370,7 +370,7 @@ double Model::shpTerminals(int k, vector<double> &multipliersDelay, vector<doubl
   //}
 }
 
-double Model::cshpTerminal1Res(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel) {
+double Model::cshpTerminal1Res(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<vector<double>>> &multipliersRel) {
   int actual, indexMin, i, j, l, root = graph->getRoot();
   double minPath, minSP, objective;
 
@@ -386,7 +386,8 @@ double Model::cshpTerminal1Res(int k, vector<double> &multipliersDelay, vector<d
     
   // If exists negative cycle, compute a cshp with values of bigM as resource
   if (!r) {
-      cout << "Nagative" << endl;
+      cout << "Negative" << endl;
+      return 0;
    // if (relaxNum == 2) return makeModelRL2(k, multipliersDelay, multipliersVar, multipliersLeaf, multipliersRel);
    // else return makeModelRL3(k, multipliersJitter, multipliersVar, multipliersLeaf, multipliersRel);
   } else {
@@ -448,7 +449,7 @@ double Model::cshpTerminal1Res(int k, vector<double> &multipliersDelay, vector<d
   }
 }
 
-double Model::cshpTerminal2Res(int k, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel) {
+double Model::cshpTerminal2Res(int k, vector<vector<double>> &multipliersVar, vector<vector<vector<double>>> &multipliersRel) {
   int actual, indexMin, i, j, l, root = graph->getRoot();
   double minPath, minSP, objective;
   vector<pair<int, int>> firstPath = vector<pair<int, int>>();
@@ -465,7 +466,49 @@ double Model::cshpTerminal2Res(int k, vector<vector<double>> &multipliersVar, ve
   
   // If exists negative cycle, compute a cshp with values of bigM as resource
   if (!r) {
-    //return makeModelRL4(k, multipliersVar, multipliersLeaf, multipliersRel);
+    vector<vector<graph_traits<SPPRCGraph2Res>::edge_descriptor>> opt_solutions;
+    vector<spp_spp_2_res_cont> pareto_opt;
+    
+    for (int i = 0; i < graph->getN(); i++) {
+      SPPRC_Graph_Vert_2_Res &vert_prop = get(vertex_bundle, cshpGraph2Res[k])[k];
+      vert_prop.con_1 = graph->getParamDelay() + 1;
+      vert_prop.con_2 = graph->getParamJitter() + 1;
+    }
+
+    r_c_shortest_paths(cshpGraph2Res[k],
+		       get(&SPPRC_Graph_Vert_2_Res::num, cshpGraph2Res[k]),
+		       get(&SPPRC_Graph_Arc_2_Res::num, cshpGraph2Res[k]),
+		       root,
+		       k,
+		       opt_solutions,
+		       pareto_opt,
+		       spp_spp_2_res_cont(0, 0, 0),
+		       ref_spprc_2_res(),
+		       dominance_spp_2_res(),
+		       allocator<r_c_shortest_paths_label<SPPRCGraph2Res, spp_spp_2_res_cont >>(),
+		       default_r_c_shortest_paths_visitor());
+
+    minPath = pareto_opt[0].cost;
+    indexMin = 0;
+    for (i = 0; i < opt_solutions.size(); i++) {
+      if (pareto_opt[i].cost < minPath) {
+	minPath = pareto_opt[i].cost;
+	indexMin = i;
+      }
+    }
+    for (j = static_cast<int>(opt_solutions[indexMin].size())-1; j >= 0; --j) {
+      i = source(opt_solutions[indexMin][j], cshpGraph2Res[k]);
+      l = target(opt_solutions[indexMin][j], cshpGraph2Res[k]);
+      f[i][l][k] = true;
+    }
+
+    for (int i = 0; i < graph->getN(); i++) {
+      SPPRC_Graph_Vert_2_Res &vert_prop = get(vertex_bundle, cshpGraph2Res[k])[k];
+      vert_prop.con_1 = graph->getParamDelay();
+      vert_prop.con_2 = graph->getParamJitter();
+    }
+      
+    return minPath;
   } else {
     vector<vector<graph_traits<SPPRCGraph2Res>::edge_descriptor>> opt_solutions;
     vector<spp_spp_2_res_cont> pareto_opt;
@@ -506,7 +549,7 @@ double Model::cshpTerminal2Res(int k, vector<vector<double>> &multipliersVar, ve
 	return minPath;
       } else {
 	actual = k;
-    z[k] = true;
+	z[k] = true;
 	while(actual != root) {
 	  f[parent[actual]][actual][k] = true;
 	  actual = parent[actual];
@@ -933,7 +976,7 @@ double Model::penalty4Rl (vector<vector<double>> &multipliersVar) {
   return (objective + penalty);
 }
 
-void Model::updateArbCosts(vector<vector<vector<double>>> &multipliersRel) { 
+void Model::updateArbCosts(vector<vector<vector<double>>> &multipliersRel) {
   int i, j, o, d, n = graph->getN();
   double sumMultipliers;
 
@@ -943,25 +986,21 @@ void Model::updateArbCosts(vector<vector<vector<double>>> &multipliersRel) {
       sumMultipliers = 0;
       for (auto k : graph->DuS)
 	    sumMultipliers -= multipliersRel[i][j][k];
-      //      cout << i << " - " << j << " = " << sumMultipliers << endl;
       updateEdgeBranching(i, j, sumMultipliers);
     }
   }
   cout << "Arb updated" << endl;
 }
 
-void Model::updatePathCostsNT(int q, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel) {
+void Model::updatePathCostsNT(int q, vector<vector<vector<double>>> &multipliersRel) {
   double edgeCost = 0;
-
-  for (auto *arc : graph->arcs[0])
-    updateEdgePath(0, arc->getD(), q, false, multipliersRel[0][arc->getD()][q] + multipliersLeaf[arc->getD()][q]);
 
   for (int i = 0; i < graph->getN(); i++)
     for (auto *arc : graph->arcs[i]) 
       updateEdgePath(i, arc->getD(), q, false, multipliersRel[i][arc->getD()][q]);
 }
 
-void Model::updatePathCostsTerminals(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel) {
+void Model::updatePathCostsTerminals(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar,  vector<vector<vector<double>>> &multipliersRel) {
   double edgeCostAux = 0;
   int i, j, o, d, n = graph->getN();
 
@@ -975,7 +1014,7 @@ void Model::updatePathCostsTerminals(int k, vector<double> &multipliersDelay, ve
       j = arc->getD();
       if (j != k)
 	updateEdgePath(0, j, k, true, (edgeCostAux + multipliersDelay[k]) * arc->getDelay() +
-		       multipliersJitter[k] * arc->getJitter() + multipliersRel[0][j][k] + multipliersLeaf[j][k]);
+		       multipliersJitter[k] * arc->getJitter() + multipliersRel[0][j][k]);
     }
 
     for (i = 1; i < n; i++) {
@@ -990,7 +1029,7 @@ void Model::updatePathCostsTerminals(int k, vector<double> &multipliersDelay, ve
       j = arc->getD();
       if (j != k)
 	updateEdgePath(0, j, k, true, edgeCostAux * arc->getDelay() + 
-		       multipliersJitter[k] * arc->getJitter() + multipliersRel[0][j][k] + multipliersLeaf[j][k]);
+		       multipliersJitter[k] * arc->getJitter() + multipliersRel[0][j][k]);
     }
 
     for (i = 1; i < n; i++) {
@@ -1004,7 +1043,7 @@ void Model::updatePathCostsTerminals(int k, vector<double> &multipliersDelay, ve
       j = arc->getD();
       if (j != k)
 	updateEdgePath(0, j, k, true, (edgeCostAux + multipliersDelay[k]) * arc->getDelay() + 
-		       multipliersRel[0][j][k] + multipliersLeaf[j][k]);
+		       multipliersRel[0][j][k]);
     }
 
     for (i = 1; i < n; i++) {
@@ -1014,37 +1053,31 @@ void Model::updatePathCostsTerminals(int k, vector<double> &multipliersDelay, ve
       }
     }
   } else {
-    for (auto *arc : graph->arcs[0]) {
-      j = arc->getD();
-       if (j != k) updateEdgePath(0, j, k, true, multipliersRel[0][j][k] + multipliersLeaf[j][k]);
-    }
-
-    for (i = 1; i < n; i++) {
+    for (i = 0; i < n; i++) {
       for (auto *arc : graph->arcs[i]) {
         j = arc->getD();
-        updateEdgePath(i, j, k, true, multipliersRel[i][j][k]);
-        //cout << i << " - " << j << " - " << k << " = " << multipliersRel[i][j][k] << endl;
+        updateEdgePath(i, j, k, true, multipliersRel[i][j][k] + arc->getDelay() * edgeCostAux);
       }
     }
   }
-  //getchar();
 }
 
-bool Model::solve(vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel) {
+bool Model::solve(vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<vector<double>>> &multipliersRel) {
   initialize();
   objectiveFunction = 0;
+  int root = graph->getRoot();
   // Terminals 
   for (auto k : graph->terminals) {
     if (graph->noPath[k]) {
-      f[graph->getRoot()][0][k] = f[0][k][k] = true;
-      objectiveFunction += (getEdgeShp(graph->getRoot(), 0, k) + getEdgeShp(0, k, k));
+      f[root][0][k] = f[0][k][k] = true;
+      objectiveFunction += multipliersRel[root][0][k] + multipliersRel[0][k][k];
       z[k] = true;
     } else {
       // Path to terminals
-      updatePathCostsTerminals(k, multipliersDelay, multipliersJitter, multipliersVar, multipliersLeaf, multipliersRel);
-      if (relaxNum == 1) objectiveFunction += shpTerminals(k, multipliersDelay, multipliersJitter, multipliersVar, multipliersLeaf, multipliersRel);
-      else if (relaxNum <= 3) objectiveFunction += cshpTerminal1Res(k, multipliersDelay, multipliersJitter, multipliersVar, multipliersLeaf, multipliersRel);
-      else objectiveFunction += cshpTerminal2Res(k, multipliersVar, multipliersLeaf, multipliersRel);
+      updatePathCostsTerminals(k, multipliersDelay, multipliersJitter, multipliersVar, multipliersRel);
+      if (relaxNum == 1) objectiveFunction += shpTerminals(k, multipliersDelay, multipliersJitter, multipliersVar, multipliersRel);
+      else if (relaxNum <= 3) objectiveFunction += cshpTerminal1Res(k, multipliersDelay, multipliersJitter, multipliersVar, multipliersRel);
+      else objectiveFunction += cshpTerminal2Res(k, multipliersVar, multipliersRel);
     }
   }
   //cout << "CSHP: " << objectiveFunction << endl;
@@ -1052,10 +1085,10 @@ bool Model::solve(vector<double> &multipliersDelay, vector<double> &multipliersJ
   for (auto k : graph->nonTerminals) {
     if (graph->removed[k]) {
       f[graph->getRoot()][0][k] = f[0][k][k] = true;
-      objectiveFunction += (getEdgeShp(graph->getRoot(), 0, k) + getEdgeShp(0, k, k));
+      objectiveFunction += multipliersRel[root][0][k] + multipliersRel[0][k][k];
     } else {
       // Path to non-terminals
-      updatePathCostsNT(k, multipliersLeaf, multipliersRel);
+      updatePathCostsNT(k, multipliersRel);
       objectiveFunction += shpNonTerminal(k);
     }
   }
@@ -1076,13 +1109,8 @@ bool Model::solve(vector<double> &multipliersDelay, vector<double> &multipliersJ
   if (relaxNum == 1) objectiveFunction += penalty1Rl(multipliersDelay, multipliersJitter, multipliersVar);
   else if (relaxNum == 2) objectiveFunction += penalty2Rl(multipliersJitter, multipliersVar);
   else if (relaxNum == 3) objectiveFunction += penalty3Rl(multipliersDelay, multipliersVar);
-  else {
-    for (auto k : graph->terminals)
-      if (z[k]) {
-          objectiveFunction += 1;
-      }
-  }
-  //cout << "PPL: " << objectiveFunction << endl;
+  else objectiveFunction += penalty4Rl(multipliersVar);
+  // cout << "PPL: " << objectiveFuntcion << endl;
   return true;
 }
 

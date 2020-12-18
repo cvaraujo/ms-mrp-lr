@@ -72,10 +72,9 @@ class Model {
   void createGraphRL2();
   void createGraphRL3();
   void createGraphRL4();
-
-  double shpTerminals(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel);
-  double cshpTerminal1Res(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel);
-  double cshpTerminal2Res(int k, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel);
+  double shpTerminals(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar,  vector<vector<vector<double>>> &multipliersRel);
+  double cshpTerminal1Res(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar,  vector<vector<vector<double>>> &multipliersRel);
+  double cshpTerminal2Res(int k, vector<vector<double>> &multipliersVar,  vector<vector<vector<double>>> &multipliersRel);
   double shpNonTerminal(int q);
   double getEdgeShp(int i, int j, int k);
   double getEdgeCshp(int i, int j, int k);
@@ -86,9 +85,9 @@ class Model {
   double penalty4Rl (vector<vector<double>> &multipliersVar);
 
   void updateArbCosts(vector<vector<vector<double>>> &multipliersRel);
-  void updatePathCostsNT(int q, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel);
+  void updatePathCostsNT(int q,  vector<vector<vector<double>>> &multipliersRel);
   void updatePathCostsTerminals(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, 
-				vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, 
+				vector<vector<double>> &multipliersVar,  
 				vector<vector<vector<double>>> &multipliersRel);
   int subgradientHeuristic();
 
@@ -150,16 +149,16 @@ public:
   void initialize();
 
   bool solve(vector<double> &multipliersDelay, vector<double> &multipliersJitter, 
-	     vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, 
+	     vector<vector<double>> &multipliersVar,  
 	     vector<vector<vector<double>>> &multipliersRel);
 
-  double makeModelRL1(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel);
+  double makeModelRL1(int k, vector<double> &multipliersDelay, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar,  vector<vector<vector<double>>> &multipliersRel);
   
-  double makeModelRL2(int k, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel);
+  double makeModelRL2(int k, vector<double> &multipliersJitter, vector<vector<double>> &multipliersVar,  vector<vector<vector<double>>> &multipliersRel);
 
-  double makeModelRL3(int k, vector<double> &multipliersDelay, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel);
+  double makeModelRL3(int k, vector<double> &multipliersDelay, vector<vector<double>> &multipliersVar,  vector<vector<vector<double>>> &multipliersRel);
 
-  double makeModelRL4(int k, vector<vector<double>> &multipliersVar, vector<vector<double>> &multipliersLeaf, vector<vector<vector<double>>> &multipliersRel);
+  double makeModelRL4(int k, vector<vector<double>> &multipliersVar,  vector<vector<vector<double>>> &multipliersRel);
   
   int getOriginalObj();
     

@@ -32,10 +32,10 @@ Lagrangean::Lagrangean(Graph *graph, int relaxNum, bool heuristics, bool barrier
   if (barrierMethod) {
     auto start = chrono::steady_clock::now();
     BarrierMethod *bm  = new BarrierMethod(graph);
-     bm->initModel();
-     bm->solve();
-     if (relaxNum == 1 || relaxNum == 3) bm->getMultipliersDelay(multipliersDelay);
-     if (relaxNum <= 2) bm->getMultipliersJitter(multipliersJitter);
+    bm->initModel();
+    bm->solve();
+    if (relaxNum == 1 || relaxNum == 3) bm->getMultipliersDelay(multipliersDelay);
+    if (relaxNum <= 2) bm->getMultipliersJitter(multipliersJitter);
 
     bm->getMultipliersRelation(multipliersRel);
     bm->getMultipliersVariation(multipliersVar);
@@ -179,32 +179,26 @@ double Lagrangean::solve() {
   int n = graph->getN(), originalObj, heuristicObj = int(graph->terminals.size());
   iterBlb = 0, iterBub = 0, progress = 0;
     
-  double thetaVar, normVar, thetaRel, normRel, 
-    thetaLeaf, normLeaf, thetaDelay, normDelay,
-    thetaJitter, normJitter, lpObj;
+  double thetaVar, normVar, thetaRel, normRel,  thetaDelay, normDelay, thetaJitter, normJitter, lpObj;
 
   // Auxiliar vectors
   vector<double> gradientDelay, gradientJitter;
-  vector<vector<double>> gradientVar, gradientLeaf;
+  vector<vector<double>> gradientVar;
   vector<vector<vector<double>>> gradientRel;
 
   gradientDelay = vector<double>(n);
   gradientJitter = vector<double>(n);
   gradientVar = vector<vector<double >>(n, vector<double>(n));
-  gradientLeaf = vector<vector<double >>(n, vector<double>(n));
   gradientRel = vector<vector<vector<double>>>(n, vector<vector<double>>(n, vector<double>(n)));
 
   while (iter < maxIter && endTime < time) {
-
-    if (model->solve(multipliersDelay, multipliersJitter, multipliersVar, multipliersLeaf, multipliersRel)) {
+    if (model->solve(multipliersDelay, multipliersJitter, multipliersVar, multipliersRel)) {
       if (iter ==  0) firstLB = model->getObj();
-      
       if (relaxNum == 1 || relaxNum == 3) getGradientDelay(gradientDelay);
       if (relaxNum <= 2) getGradientJitter(gradientJitter);
 
       getGradientVariation(gradientVar);
       getGradientRelation(gradientRel);
-      getGradientLeaf(gradientLeaf);
 
       lpObj = model->getObj();
       // Improvement of the lower bound?
@@ -233,15 +227,15 @@ double Lagrangean::solve() {
 	}
       }
 
-        for (int i = 0; i < graph->getN(); i++) {
-            for (auto *arc : graph->arcs[i]) {
-                for (auto k : graph->DuS)
-                    if (model->f[i][arc->getD()][k])
-                        freqLB[i][arc->getD()] += 1;
-                if (model->treeY[i][arc->getD()])
-                    freqUB[i][arc->getD()] += 1;
-            }
-        }
+      for (int i = 0; i < graph->getN(); i++) {
+	for (auto *arc : graph->arcs[i]) {
+	  for (auto k : graph->DuS)
+	    if (model->f[i][arc->getD()][k])
+	      freqLB[i][arc->getD()] += 1;
+	  if (model->treeY[i][arc->getD()])
+	    freqUB[i][arc->getD()] += 1;
+	}
+      }
       //      cout << "PPL: " << lpObj << ", Original: " << originalObj << ", heuristic: " << heuristicObj << endl;
       // Step size 
       if (relaxNum == 1 || relaxNum == 3){
@@ -258,16 +252,12 @@ double Lagrangean::solve() {
       
       normVar = getNormVariation(gradientVar);
       normRel = getNormRelation(gradientRel);
-      normLeaf = getNormLeaf(gradientLeaf);
 
       if (normVar == 0) thetaVar = 0;
       else thetaVar = lambda * ((UB - lpObj) / pow(normVar, 2));
 
       if (normRel == 0) thetaRel = 0;
       else thetaRel = lambda * ((UB - lpObj) / pow(normRel, 2));
-
-      if (normLeaf == 0) thetaLeaf = 0;
-      else thetaLeaf = lambda * ((UB - lpObj) / pow(normLeaf, 2));
 
       // Update the multipliers
       for (int k : graph->terminals) { 
@@ -276,17 +266,14 @@ double Lagrangean::solve() {
 	for (int l : graph->terminals)
 	  if (k != l) multipliersVar[k][l] = max(0.0, multipliersVar[k][l] + gradientVar[k][l] * thetaVar);
       }
-      for (auto q : graph->DuS)
-	for (auto e : graph->DuS)
-	  if (q != e)
-	    multipliersLeaf[q][e] = max(0.0, multipliersLeaf[q][e] + (gradientLeaf[q][e] * thetaLeaf));
-
+      
       for (auto k : graph->DuS)
 	for (int i = 0; i < n; i++)
 	  for (auto *arc : graph->arcs[i]) 
 	    multipliersRel[i][arc->getD()][k] = max(0.0, multipliersRel[i][arc->getD()][k] + (gradientRel[i][arc->getD()][k] * thetaRel));
     
-      //cout << "(Feasible) Upper Bound = " << UB << ", (Relaxed) Lower Bound = " << LB << endl;
+      cout << "(Feasible) Upper Bound = " << UB << ", (Relaxed) Lower Bound = " << LB << endl;
+      //getchar();
       iter++;
       end = chrono::steady_clock::now();
       endTime = chrono::duration_cast<chrono::seconds>(end - start).count();
@@ -307,13 +294,13 @@ void Lagrangean::showSolution(string outputName) {
   output << "gap: " << 100 * (double(UB - ceil(LB)) / double(UB)) << endl;
   output << "BM. Time: " << bmTime << "\nRuntime: " << endTime << endl;
 
-    for (int i = 0; i < graph->getN(); i++)
-        for (auto *arc : graph->arcs[i])
-            output << "FL " << i << " " << arc->getD() << " " << freqLB[i][arc->getD()] << endl;
+  for (int i = 0; i < graph->getN(); i++)
+    for (auto *arc : graph->arcs[i])
+      output << "FL " << i << " " << arc->getD() << " " << freqLB[i][arc->getD()] << endl;
 
-    for (int i = 0; i < graph->getN(); i++)
-        for (auto *arc : graph->arcs[i])
-            output << "FU " << i << " " << arc->getD() << " " << freqUB[i][arc->getD()] << endl;
+  for (int i = 0; i < graph->getN(); i++)
+    for (auto *arc : graph->arcs[i])
+      output << "FU " << i << " " << arc->getD() << " " << freqUB[i][arc->getD()] << endl;
 
-    output.close();
+  output.close();
 }
