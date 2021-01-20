@@ -466,6 +466,7 @@ double Model::cshpTerminal2Res(int k, vector<vector<double>> &multipliersVar, ve
   
   // If exists negative cycle, compute a cshp with values of bigM as resource
   if (!r) {
+    cout << "Negative cycle in the path to " << k << endl;
     vector<vector<graph_traits<SPPRCGraph2Res>::edge_descriptor>> opt_solutions;
     vector<spp_spp_2_res_cont> pareto_opt;
     
@@ -507,7 +508,7 @@ double Model::cshpTerminal2Res(int k, vector<vector<double>> &multipliersVar, ve
       vert_prop.con_1 = graph->getParamDelay();
       vert_prop.con_2 = graph->getParamJitter();
     }
-      
+    z[k] = true;
     return minPath;
   } else {
     vector<vector<graph_traits<SPPRCGraph2Res>::edge_descriptor>> opt_solutions;
@@ -1056,7 +1057,8 @@ void Model::updatePathCostsTerminals(int k, vector<double> &multipliersDelay, ve
     for (i = 0; i < n; i++) {
       for (auto *arc : graph->arcs[i]) {
         j = arc->getD();
-        updateEdgePath(i, j, k, true, multipliersRel[i][j][k] + arc->getDelay() * edgeCostAux);
+	// updateEdgePath(i, j, k, true, multipliersRel[i][j][k] + arc->getDelay() * edgeCostAux);
+	updateEdgePath(i, j, k, true, multipliersRel[i][j][k]);
       }
     }
   }
@@ -1068,9 +1070,10 @@ bool Model::solve(vector<double> &multipliersDelay, vector<double> &multipliersJ
   int root = graph->getRoot();
   // Terminals 
   for (auto k : graph->terminals) {
+    //cout << "CSHP on node " << k << endl;
     if (graph->noPath[k]) {
       f[root][0][k] = f[0][k][k] = true;
-      objectiveFunction += multipliersRel[root][0][k] + multipliersRel[0][k][k];
+      objectiveFunction += (getEdgeCshp(root, 0, k) + getEdgeCshp(0, k, k));
       z[k] = true;
     } else {
       // Path to terminals
@@ -1080,19 +1083,19 @@ bool Model::solve(vector<double> &multipliersDelay, vector<double> &multipliersJ
       else objectiveFunction += cshpTerminal2Res(k, multipliersVar, multipliersRel);
     }
   }
-  //cout << "CSHP: " << objectiveFunction << endl;
+  cout << "CSHP: " << objectiveFunction << endl;
   // Non-terminals
   for (auto k : graph->nonTerminals) {
     if (graph->removed[k]) {
       f[graph->getRoot()][0][k] = f[0][k][k] = true;
-      objectiveFunction += multipliersRel[root][0][k] + multipliersRel[0][k][k];
+      objectiveFunction += (getEdgeShp(root, 0, k) + getEdgeShp(0, k, k));
     } else {
       // Path to non-terminals
       updatePathCostsNT(k, multipliersRel);
       objectiveFunction += shpNonTerminal(k);
     }
   }
-  //cout << "SHP: " << objectiveFunction << endl;
+  cout << "SHP: " << objectiveFunction << endl;
 
   // Tree and Arc selection
   updateArbCosts(multipliersRel);
@@ -1104,13 +1107,16 @@ bool Model::solve(vector<double> &multipliersDelay, vector<double> &multipliersJ
     heuristicObj = subgradientHeuristic();
   }
   
-  //cout << "Arb: " << objectiveFunction << endl;
+  cout << "Arb: " << objectiveFunction << endl;
   // Penalties
   if (relaxNum == 1) objectiveFunction += penalty1Rl(multipliersDelay, multipliersJitter, multipliersVar);
   else if (relaxNum == 2) objectiveFunction += penalty2Rl(multipliersJitter, multipliersVar);
   else if (relaxNum == 3) objectiveFunction += penalty3Rl(multipliersDelay, multipliersVar);
-  else objectiveFunction += penalty4Rl(multipliersVar);
-  // cout << "PPL: " << objectiveFuntcion << endl;
+  else {
+    for (auto k : graph->terminals)
+      if (z[k]) objectiveFunction += 1;
+  } // objectiveFunction += penalty4Rl(multipliersVar);
+  cout << "PPL: " << objectiveFunction << endl;
   return true;
 }
 
