@@ -7,7 +7,7 @@ int main(int argc, const char *argv[]) {
   if (argc >= 12) {
     // to random decisions
     srand(time(NULL));
-
+    //srand(0);
     // Create the graph and fill the parameters 
     auto *graph = new Graph(argv[2], argv[3], argv[4]);
 	    
@@ -17,8 +17,8 @@ int main(int argc, const char *argv[]) {
     bool mve, sae;
     prepMve >> mve; prepSae >> sae;
 
-    if (mve) graph->MVE(argv[4]);
-    if (sae) graph->SAE(argv[4]);
+//    if (mve) graph->MVE(argv[4]);
+//    if (sae) graph->SAE(argv[4]);
     graph->loadPreprocessing(argv[13]);
     graph->finishPreprocessing(argv[4], mve, sae);
     // ./MSLagrangean relaxation graph.txt param.txt result.txt

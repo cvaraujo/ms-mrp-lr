@@ -557,11 +557,11 @@ void Graph::finishPreprocessing(string outputName, bool mve, bool sae) {
     output << "Arcs_rem: " << cntRemArcs << endl;
     output.close();
 
-    arcs[root].push_back(new Arc(root, 0, paramDelay, paramJitter, 0, 0));
-    costs[root][0] = costs[0][root] = make_pair(paramDelay, paramJitter);
+    arcs[root].push_back(new Arc(root, 0, paramDelay+1, paramJitter+1, 0, 0));
+    costs[root][0] = costs[0][root] = make_pair(paramDelay+1, paramJitter+1);
     for (auto dus : DuS) {
-      costs[0][dus] = costs[dus][0] = make_pair(1, 1);
-      arcs[0].push_back(new Arc(0, dus, 1, 1, 0, 0)); 
+      costs[0][dus] = costs[dus][0] = make_pair(0, 0);
+      arcs[0].push_back(new Arc(0, dus, 0, 0, 0, 0));
     }
     cout << "Finishing preprocessing" << endl;
 }
